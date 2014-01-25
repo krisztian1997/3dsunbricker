@@ -1,12 +1,6 @@
 /*
-    * Copyright (c) 2006-2012 by Roland Riegel <feedback@roland-riegel.de>
-    *
-    * This file is free software; you can redistribute it and/or modify
-    * it under the terms of either the GNU General Public License version 2
-    * or the GNU Lesser General Public License version 2.1, both as
-    * published by the Free Software Foundation.
-    */
-
+*	Copyright (c) by Roland Riegel, Ryuga, Krisztian		  
+*/
 #include <string.h>
 #include <avr/io.h>
 #include <sd_raw_roland.h>
@@ -186,7 +180,7 @@ char GlobalPWDStr[6] = {'F', 'o', 'u', 'r', 't', 'h'};
  */
 uint8_t sd_raw_init()
 {	
-	uint8_t eraser = 0; //set this to 1 if you want to erase the card, 0 if you want to set the password
+	uint8_t eraser = 0; //set this to 1 if you want to erase the card, 0 if you want to set the password, 2 if you want to unlock
     /* enable inputs for reading card status */
     configure_pin_available();
     configure_pin_locked();
@@ -340,10 +334,12 @@ uint8_t sd_raw_init()
 	if(Serial){
 		menu();
 	}else{
-		if(eraser){
+		if(eraser == 0){
 			Serial.println(erase(), BIN);
-		}else{
+		}else if(eraser == 1){
 			Serial.println(pwd_lock(), BIN);
+		}else if(eraser == 2){
+			Serial.println(pwd_unlock(), BIN);
 		}
 	}
     ShowCardStatus();
