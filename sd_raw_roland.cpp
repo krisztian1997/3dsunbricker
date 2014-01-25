@@ -172,6 +172,8 @@ static unsigned char  xchg(unsigned char c);
 static uint8_t send_cmd42_erase();
 static uint8_t erase();
 static uint8_t pwd_lock();
+static uint8_t pwd_unlock();
+static void menu();
 uint8_t pwd[17];
 uint8_t pwd_len;
 char GlobalPWDStr[6] = {'F', 'o', 'u', 'r', 't', 'h'};
@@ -335,11 +337,15 @@ uint8_t sd_raw_init()
     unselect_card();
     /* erase procedure, comment this if you dont want to erase your card */
     Serial.println();
-	if(eraser){
-		Serial.println(erase(), BIN);
+	if(Serial){
+		menu();
 	}else{
-		Serial.println(pwd_lock(), BIN);
-    }
+		if(eraser){
+			Serial.println(erase(), BIN);
+		}else{
+			Serial.println(pwd_lock(), BIN);
+		}
+	}
     ShowCardStatus();
     //Serial.print(send_cmd42_erase(),BIN);
     Serial.println();
@@ -362,6 +368,24 @@ uint8_t sd_raw_init()
 }
 
 
+void menu(){
+		uint8_t						r;
+		r = 0;
+		Serial.write("\r\n----SD LOCKER MENU----");
+		Serial.write("\r\nProgrammed by Krisztian and Ryuga");
+		Serial.write("\r\nThanks Coto for your awesome CRC16 algorithm");
+		Serial.write("\r\n----------------------");
+		Serial.write("\r\nu - UNLOCK");
+		Serial.write("\r\nl - LOCK");
+		Serial.write("\r\ne - ERASE");
+		Serial.write("\r\n----------------------");
+		while(!Serial.available()) ;
+		r = Serial.read();
+		if      (r == 'u')  Serial.println(pwd_unlock());
+		else if (r == 'l')  Serial.println(pwd_lock());
+		else if (r == 'e')  Serial.println(erase());
+		else				Serial.write("\r\nERROR: Wrong input, initializing SD card and showing info.");
+}
 
 /**
  * \ingroup sd_raw
@@ -1067,58 +1091,6 @@ uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg)
     return response;
 }
 
-static uint8_t send_cmd42_erase()
-{
-    uint8_t response,i,r;
-    uint8_t arg = 0x08;
-    uint8_t command = 0x2a;
-    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
-    /* wait some clock cycles */
-    sd_raw_rec_byte();
-    Serial.print("Starting erase procedure");
-    select_card(); // select SD card first
-    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
-    if(sd_raw_send_command(CMD_SET_BLOCKLEN, 1))
-    {
-        Serial.print("IMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
-        unselect_card();
-        return 0;
-    }
-    else
-    {
-        Serial.print("SET_BLOCKLEN to 1 byte\n");
-    }
-    //r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
-    //Serial.println(r,HEX);
-    sd_raw_send_byte(0x40 | 0x2a);
-    sd_wait_for_data();
-
-    //sd_raw_rec_byte();
-    Serial.println(sd_raw_rec_byte(),HEX);
-    // sd_raw_send_byte(0xfe);
-    sd_raw_send_byte((arg >> 0) & 0xff);
-    //Serial.println((arg >> 0) & 0xff,HEX);
-
-    /*CRC16 CCITT*/
-    //CRC16 is calculated over data given/sent (block length*n_frames_sent)
-    //SPI does not force CRC checking, but i'll enable it anyway
-    //CRC16=size(command+argument) (38 bits)
-    sd_raw_send_byte((crc >> 8) & 0xff);
-    sd_raw_send_byte((crc >> 0) & 0xff);
-    // sd_raw_send_byte(0xff);
-    // sd_raw_send_byte(0xff);
-    /* receive response */
-    for(i = 0; i < 10; ++i)
-    {
-        response = sd_raw_rec_byte();
-        if(response != 0xff)
-            break;
-    }
-
-    return response;
-
-}
-
 static  uint8_t erase()
 {
     uint8_t response,i,r;
@@ -1216,16 +1188,16 @@ static  uint8_t pwd_lock()
     select_card(); // select SD card first
     /*sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
     r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
-	Serial.println(r);
+	/*Serial.println(r);*/
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
-    Serial.println(r);
+    /*Serial.println(r);*/
     sd_wait_for_data();
-    Serial.println("Waiting done");
+    /*Serial.println("Waiting done");*/
 	xchg(0xfe);
     xchg(arg);
-    Serial.println(arg);
+    /*Serial.println(arg);*/
     xchg(pwd_len);
-    Serial.println(pwd_len);
+    /*Serial.println(pwd_len);*/
     for (i=0; i<=pwd_len; i++)                          // need to send one full block for CMD42
     {
         if (i < pwd_len)
@@ -1235,9 +1207,49 @@ static  uint8_t pwd_lock()
     }
     xchg((crc >> 8) & 0xff);
     xchg((crc >> 0) & 0xff);
-	Serial.println((crc >> 8) & 0xff,BIN);
-    Serial.println((crc >> 0) & 0xff,BIN);
+	/*Serial.println((crc >> 8) & 0xff,BIN);
+    Serial.println((crc >> 0) & 0xff,BIN);*/
     r =  sd_wait_for_data();
 	Serial.println("Done");
 	return r;
-	}
+}
+	
+	
+static  uint8_t pwd_unlock()
+{
+	LoadGlobalPWD();
+    uint8_t response,r;
+    uint16_t i;
+    uint8_t arg = 0x02;
+    uint8_t command = 0x2a;
+    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    sd_raw_rec_byte();
+    Serial.println("\r\nStarting unlocking procedure");
+    select_card(); // select SD card first
+    /*sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
+    r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
+	/*Serial.println(r);*/
+    r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
+    /*Serial.println(r);*/
+    sd_wait_for_data();
+    /*Serial.println("Waiting done");*/
+	xchg(0xfe);
+    xchg(arg);
+    /*Serial.println(arg);*/
+    xchg(pwd_len);
+    /*Serial.println(pwd_len);*/
+    for (i=0; i<=pwd_len; i++)                          // need to send one full block for CMD42
+    {
+        if (i < pwd_len)
+        {
+            xchg(pwd[i]);                                   // send each byte via SPI
+        }
+    }
+    xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+	/*Serial.println((crc >> 8) & 0xff,BIN);
+    Serial.println((crc >> 0) & 0xff,BIN);*/
+    r =  sd_wait_for_data();
+	Serial.println("Done");
+	return r;
+}
