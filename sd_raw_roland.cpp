@@ -1,12 +1,11 @@
-
 /*
- * Copyright (c) 2006-2012 by Roland Riegel <feedback@roland-riegel.de>
- *
- * This file is free software; you can redistribute it and/or modify
- * it under the terms of either the GNU General Public License version 2
- * or the GNU Lesser General Public License version 2.1, both as
- * published by the Free Software Foundation.
- */
+    * Copyright (c) 2006-2012 by Roland Riegel <feedback@roland-riegel.de>
+    *
+    * This file is free software; you can redistribute it and/or modify
+    * it under the terms of either the GNU General Public License version 2
+    * or the GNU Lesser General Public License version 2.1, both as
+    * published by the Free Software Foundation.
+    */
 
 #include <string.h>
 #include <avr/io.h>
@@ -158,7 +157,7 @@ static uint8_t raw_block_written;
 
 /* card type state */
 static uint8_t sd_raw_card_type;
-uint8_t	cardstatus[2];
+uint8_t cardstatus[2];
 /* private helper functions */
 static void sd_raw_send_byte(uint8_t b);
 static uint8_t sd_raw_rec_byte();
@@ -166,10 +165,17 @@ static uint8_t sd_raw_send_command(uint8_t command, uint32_t arg);
 static uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg);
 static void ReadCardStatus();
 static void ShowCardStatus();
-static int8_t sd_wait_for_data();
-static unsigned char xchg(unsigned char c);
-/*static uint8_t send_cmd42_erase();*/
+static void  LoadGlobalPWD(void);
+static int8_t  sd_wait_for_data();
+static unsigned char  xchg(unsigned char c);
+
+static uint8_t send_cmd42_erase();
 static uint8_t erase();
+static uint8_t pwd_lock();
+uint8_t      pwd[16];
+uint8_t pwd_len;
+char GlobalPWDStr[16] = {'F', 'o', 'u', 'r', 't', 'h', ' ', 'A','m', 'e', 'n', 'd', 'm', 'e', 'n', 't'};
+#define  GLOBAL_PWD_LEN      (sizeof(GlobalPWDStr))
 /**
  * \ingroup sd_raw
  * Initializes memory card communication.
@@ -177,7 +183,8 @@ static uint8_t erase();
  * \returns 0 on failure, 1 on success.
  */
 uint8_t sd_raw_init()
-{
+{	
+	uint8_t eraser = 0; //set this to 1 if you want to erase the card, 0 if you want to set the password
     /* enable inputs for reading card status */
     configure_pin_available();
     configure_pin_locked();
@@ -187,7 +194,7 @@ uint8_t sd_raw_init()
     configure_pin_sck();
     configure_pin_ss();
     configure_pin_miso();
-	Serial.print("Enabled outputs/inputs\n");
+    Serial.print("Enabled outputs/inputs\n");
     unselect_card();
 
     /* initialize SPI with lowest frequency; max. 400kHz during identification mode of card */
@@ -200,23 +207,23 @@ uint8_t sd_raw_init()
            (1 << SPR1) | /* Clock Frequency: f_OSC / 128 */
            (1 << SPR0);
     SPSR &= ~(1 << SPI2X); /* No doubled clock frequency */
-	Serial.print("Initialized SPI with 400khz frequency\n");
+    Serial.print("Initialized SPI with 400khz frequency\n");
     /* initialization procedure */
     sd_raw_card_type = 0;
-    
+
     if(!sd_raw_available())
         return 0;
-	Serial.print("Waiting for the cart to start \n");
+    Serial.print("Waiting for the cart to start \n");
     /* card needs 74 cycles minimum to start up */
     for(uint8_t i = 0; i < 10; ++i)
     {
         /* wait 8 clock cycles */
         sd_raw_rec_byte();
     }
-	Serial.print("Card is awake, selecting it\n");
+    Serial.print("Card is awake, selecting it\n");
     /* address card */
     select_card();
-	Serial.print("Selected card, reseting\n");
+    Serial.print("Selected card, reseting\n");
     /* reset card */
     uint8_t response;
     for(uint16_t i = 0; ; ++i)
@@ -228,12 +235,12 @@ uint8_t sd_raw_init()
         if(i == 0x1ff)
         {
             unselect_card();
-			Serial.print("Card reseted but no IDLE answer\n");
+            Serial.print("Card reseted but no IDLE answer\n");
             return 0;
-			
+
         }
     }
-	Serial.print("Card reseted sucesfully\n");
+    Serial.print("Card reseted sucesfully\n");
 #if SD_RAW_SDHC
     /* check for version of SD card specification */
     response = sd_raw_send_command(CMD_SEND_IF_COND, 0x100 /* 2.7V - 3.6V */ | 0xaa /* test pattern */);
@@ -248,7 +255,7 @@ uint8_t sd_raw_init()
 
         /* card conforms to SD 2 card specification */
         sd_raw_card_type |= (1 << SD_RAW_SPEC_2);
-		Serial.print("This is an SDHC (SD2) card\n");
+        Serial.print("This is an SDHC (SD2) card\n");
     }
     else
 #endif
@@ -260,12 +267,12 @@ uint8_t sd_raw_init()
         {
             /* card conforms to SD 1 card specification */
             sd_raw_card_type |= (1 << SD_RAW_SPEC_1);
-			Serial.print("This is an SD (SD1) card\n");
+            Serial.print("This is an SD (SD1) card\n");
         }
         else
         {
             /* MMC card */
-			Serial.print("MMC card\n");
+            Serial.print("MMC card\n");
         }
     }
 
@@ -293,7 +300,7 @@ uint8_t sd_raw_init()
         if(i == 0x7fff)
         {
             unselect_card();
-			Serial.print("TIMEOUT, card not ready for some reason\n");
+            Serial.print("TIMEOUT, card not ready for some reason\n");
             return 0;
         }
     }
@@ -319,22 +326,27 @@ uint8_t sd_raw_init()
     /* set block size to 512 bytes */
     if(sd_raw_send_command(CMD_SET_BLOCKLEN, 512))
     {
-		Serial.print("Set SET_BLOCKLEN to 512 byte\n");
+        Serial.print("Set SET_BLOCKLEN to 512 byte\n");
         unselect_card();
         return 0;
     }
-	ShowCardStatus();
+    ShowCardStatus();
     /* deaddress card */
     unselect_card();
-	/* erase procedure, comment this if you dont want to erase your card */
-	Serial.print("\n");
-	Serial.print(erase(),BIN);
-	Serial.print("\n");
-	Serial.println();
+    /* erase procedure, comment this if you dont want to erase your card */
+    Serial.println();
+	if(eraser){
+		Serial.println(erase(), BIN);
+	}else{
+		Serial.println(pwd_lock(), BIN);
+    }
+    ShowCardStatus();
+    //Serial.print(send_cmd42_erase(),BIN);
+    Serial.println();
     /* switch to highest SPI frequency possible */
     SPCR &= ~((1 << SPR1) | (1 << SPR0)); /* Clock Frequency: f_OSC / 4 */
     SPSR |= (1 << SPI2X); /* Doubled Clock Frequency: f_OSC / 2 */
-	Serial.print("Switched to highest SPI frequency\n");
+    Serial.print("Switched to highest SPI frequency\n");
 #if !SD_RAW_SAVE_RAM
     /* the first block is likely to be accessed first, so precache it here */
     /*raw_block_address = (offset_t) -1;*/
@@ -347,6 +359,8 @@ uint8_t sd_raw_init()
 
     return 1;
 }
+
+
 
 /**
  * \ingroup sd_raw
@@ -425,17 +439,17 @@ uint8_t sd_raw_send_command(uint8_t command, uint32_t arg)
     sd_raw_send_byte((arg >> 0) & 0xff);
     switch(command)
     {
-        case CMD_GO_IDLE_STATE:
-           sd_raw_send_byte(0x95);
-           break;
-        case CMD_SEND_IF_COND:
-           sd_raw_send_byte(0x87);
-           break;
-        default:
-           sd_raw_send_byte(0xff);
-           break;
+    case CMD_GO_IDLE_STATE:
+        sd_raw_send_byte(0x95);
+        break;
+    case CMD_SEND_IF_COND:
+        sd_raw_send_byte(0x87);
+        break;
+    default:
+        sd_raw_send_byte(0xff);
+        break;
     }
-    
+
     /* receive response */
     for(uint8_t i = 0; i < 10; ++i)
     {
@@ -470,7 +484,7 @@ uint8_t sd_raw_read(offset_t offset, uint8_t* buffer, uintptr_t length)
         read_length = 512 - block_offset; /* read up to block border */
         if(read_length > length)
             read_length = length;
-        
+
 #if !SD_RAW_SAVE_RAM
         /* check if the requested data is cached */
         if(block_address != raw_block_address)
@@ -517,11 +531,11 @@ uint8_t sd_raw_read(offset_t offset, uint8_t* buffer, uintptr_t length)
             memcpy(buffer, raw_block + block_offset, read_length);
             buffer += read_length;
 #endif
-            
+
             /* read crc16 */
             sd_raw_rec_byte();
             sd_raw_rec_byte();
-            
+
             /* deaddress card */
             unselect_card();
 
@@ -601,7 +615,7 @@ uint8_t sd_raw_read_interval(offset_t offset, uint8_t* buffer, uintptr_t interva
         /* determine byte count to read at once */
         block_offset = offset & 0x01ff;
         read_length = 512 - block_offset;
-        
+
         /* send single block request */
 #if SD_RAW_SDHC
         if(sd_raw_send_command(CMD_READ_SINGLE_BLOCK, (sd_raw_card_type & (1 << SD_RAW_SPEC_SDHC) ? offset / 512 : offset - block_offset)))
@@ -639,12 +653,13 @@ uint8_t sd_raw_read_interval(offset_t offset, uint8_t* buffer, uintptr_t interva
             read_length -= interval;
             length -= interval;
 
-        } while(read_length > 0 && length > 0);
-        
+        }
+        while(read_length > 0 && length > 0);
+
         /* read rest of data block */
         while(read_length-- > 0)
             sd_raw_rec_byte();
-        
+
         /* read crc16 */
         sd_raw_rec_byte();
         sd_raw_rec_byte();
@@ -654,8 +669,9 @@ uint8_t sd_raw_read_interval(offset_t offset, uint8_t* buffer, uintptr_t interva
 
         offset = offset - block_offset + 512;
 
-    } while(!finished);
-    
+    }
+    while(!finished);
+
     /* deaddress card */
     unselect_card();
 
@@ -697,7 +713,7 @@ uint8_t sd_raw_write(offset_t offset, const uint8_t* buffer, uintptr_t length)
         write_length = 512 - block_offset; /* write up to block border */
         if(write_length > length)
             write_length = length;
-        
+
         /* Merge the data to write with the content of the block.
          * Use the cached block if available.
          */
@@ -796,7 +812,7 @@ uint8_t sd_raw_write(offset_t offset, const uint8_t* buffer, uintptr_t length)
 uint8_t sd_raw_write_interval(offset_t offset, uint8_t* buffer, uintptr_t length, sd_raw_write_interval_handler_t callback, void* p)
 {
 #if SD_RAW_SAVE_RAM
-    #error "SD_RAW_WRITE_SUPPORT is not supported together with SD_RAW_SAVE_RAM"
+#error "SD_RAW_WRITE_SUPPORT is not supported together with SD_RAW_SAVE_RAM"
 #endif
 
     if(!buffer || !callback)
@@ -888,36 +904,36 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
 
         switch(i)
         {
-            case 0:
-                info->manufacturer = b;
-                break;
-            case 1:
-            case 2:
-                info->oem[i - 1] = b;
-                break;
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7:
-                info->product[i - 3] = b;
-                break;
-            case 8:
-                info->revision = b;
-                break;
-            case 9:
-            case 10:
-            case 11:
-            case 12:
-                info->serial |= (uint32_t) b << ((12 - i) * 8);
-                break;
-            case 13:
-                info->manufacturing_year = b << 4;
-                break;
-            case 14:
-                info->manufacturing_year |= b >> 4;
-                info->manufacturing_month = b & 0x0f;
-                break;
+        case 0:
+            info->manufacturer = b;
+            break;
+        case 1:
+        case 2:
+            info->oem[i - 1] = b;
+            break;
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+            info->product[i - 3] = b;
+            break;
+        case 8:
+            info->revision = b;
+            break;
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+            info->serial |= (uint32_t) b << ((12 - i) * 8);
+            break;
+        case 13:
+            info->manufacturing_year = b << 4;
+            break;
+        case 14:
+            info->manufacturing_year |= b >> 4;
+            info->manufacturing_month = b & 0x0f;
+            break;
         }
     }
 
@@ -961,13 +977,13 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
             {
                 switch(i)
                 {
-                    case 7:
-                        b &= 0x3f;
-                    case 8:
-                    case 9:
-                        csd_c_size <<= 8;
-                        csd_c_size |= b;
-                        break;
+                case 7:
+                    b &= 0x3f;
+                case 8:
+                case 9:
+                    csd_c_size <<= 8;
+                    csd_c_size |= b;
+                    break;
                 }
                 if(i == 9)
                 {
@@ -980,30 +996,30 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
             {
                 switch(i)
                 {
-                    case 5:
-                        csd_read_bl_len = b & 0x0f;
-                        break;
-                    case 6:
-                        csd_c_size = b & 0x03;
-                        csd_c_size <<= 8;
-                        break;
-                    case 7:
-                        csd_c_size |= b;
-                        csd_c_size <<= 2;
-                        break;
-                    case 8:
-                        csd_c_size |= b >> 6;
-                        ++csd_c_size;
-                        break;
-                    case 9:
-                        csd_c_size_mult = b & 0x03;
-                        csd_c_size_mult <<= 1;
-                        break;
-                    case 10:
-                        csd_c_size_mult |= b >> 7;
+                case 5:
+                    csd_read_bl_len = b & 0x0f;
+                    break;
+                case 6:
+                    csd_c_size = b & 0x03;
+                    csd_c_size <<= 8;
+                    break;
+                case 7:
+                    csd_c_size |= b;
+                    csd_c_size <<= 2;
+                    break;
+                case 8:
+                    csd_c_size |= b >> 6;
+                    ++csd_c_size;
+                    break;
+                case 9:
+                    csd_c_size_mult = b & 0x03;
+                    csd_c_size_mult <<= 1;
+                    break;
+                case 10:
+                    csd_c_size_mult |= b >> 7;
 
-                        info->capacity = (uint32_t) csd_c_size << (csd_c_size_mult + csd_read_bl_len + 2);
-                        break;
+                    info->capacity = (uint32_t) csd_c_size << (csd_c_size_mult + csd_read_bl_len + 2);
+                    break;
                 }
             }
         }
@@ -1016,122 +1032,47 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
 
 
 /* CUSTOM CODE */
-unsigned char mess[12] ={
-  0x15, 0x47, 0xC3, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF
+unsigned char mess[12] =
+{
+    0x15, 0x47, 0xC3, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF
 };
 uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg)
+{
+    uint8_t response,i;
+
+    /* wait some clock cycles */
+    sd_raw_rec_byte();
+
+    /* send command via SPI */
+    sd_raw_send_byte(0x40 | command);
+    sd_raw_send_byte((arg >> 24) & 0xff);
+    sd_raw_send_byte((arg >> 16) & 0xff);
+    sd_raw_send_byte((arg >> 8) & 0xff);
+    sd_raw_send_byte((arg >> 0) & 0xff);
+    /*CRC16 CCITT*/
+    //CRC16 is calculated over data given/sent (block length*n_frames_sent)
+    //SPI does not force CRC checking, but i'll enable it anyway
+    //CRC16=size(command+argument) (38 bits)
+    sd_raw_send_byte(calc_crc(mess,((command&arg)|command),CRC16STARTBIT));
+
+    /* receive response */
+    for(i = 0; i < 10; ++i)
     {
-        uint8_t response,i;
-   
-        /* wait some clock cycles */
-        sd_raw_rec_byte();
-   
-        /* send command via SPI */
-        sd_raw_send_byte(0x40 | command);
-        sd_raw_send_byte((arg >> 24) & 0xff);
-        sd_raw_send_byte((arg >> 16) & 0xff);
-        sd_raw_send_byte((arg >> 8) & 0xff);
-        sd_raw_send_byte((arg >> 0) & 0xff);
-        /*CRC16 CCITT*/
-        //CRC16 is calculated over data given/sent (block length*n_frames_sent)
-        //SPI does not force CRC checking, but i'll enable it anyway
-        //CRC16=size(command+argument) (38 bits)
-        sd_raw_send_byte(calc_crc(mess,((command&arg)|command),CRC16STARTBIT));
-       
-        /* receive response */
-        for(i = 0; i < 10; ++i)
-        {
-            response = sd_raw_rec_byte();
-            if(response != 0xff)
-                break;
-        }
-   
-        return response;
+        response = sd_raw_rec_byte();
+        if(response != 0xff)
+            break;
     }
-/*
-uint8_t send_cmd42_erase(){
-		uint8_t response,i;
-		uint8_t arg = 0x08; // 0x04020102
-		uint8_t command = 0x2a; 
-		uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
-        /* wait some clock cycles */
-        /*sd_raw_rec_byte();
-		Serial.print("Starting erase procedure");
-		select_card(); // select SD card first
-		sd_raw_send_command(CMD_CRC_ON_OFF, 0);
-		if(sd_raw_send_command(CMD_SET_BLOCKLEN, 1))
-		{
-			Serial.print("IMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
-			unselect_card();
-			return 0;
-		}else{
-			Serial.print("SET_BLOCKLEN to 1 byte\n");
-		}
-        sd_raw_send_byte(0x40 | 0x2a);
-        sd_raw_send_byte((arg >> 0) & 0xff);
-		*/
-        /*CRC16 CCITT*/
-        //CRC16 is calculated over data given/sent (block length*n_frames_sent)
-        //SPI does not force CRC checking, but i'll enable it anyway
-        //CRC16=size(command+argument) (38 bits)
-        /*sd_raw_send_byte((crc >> 8) & 0xff);
-        sd_raw_send_byte((crc >> 0) & 0xff);*/
-       
-        /* receive response */
-       /* for(i = 0; i < 10; ++i)
-        {
-            response = sd_raw_rec_byte();
-            if(response != 0xff)
-                break;
-        }
-		
-        return response;
 
+    return response;
 }
-*/
-static  unsigned char  xchg(unsigned char  c)
+
+static uint8_t send_cmd42_erase()
 {
-	SPDR = c;
-	while ((SPSR & (1<<SPIF)) == 0)  ;
-	return  SPDR;
-}
-
-static void ReadCardStatus()
-{
-	cardstatus[0] = sd_raw_send_command(CMD_SEND_STATUS, 0);
-	cardstatus[1] = xchg(0xff);
-	Serial.print("ReadCardStatus = ");
-    Serial.print(cardstatus[0], cardstatus[1]);
-    Serial.print("\n");
-	xchg(0xff);
-}
-
-static void ShowCardStatus(void)
-{
-	ReadCardStatus();
-	Serial.print("Password status: ");
-	if ((cardstatus[1] & 0x01) ==  0)  Serial.print("un");
-	Serial.print("locked\n");
-}
-
-static int8_t  sd_wait_for_data(void)
-{
-	int16_t				i;
-	uint8_t				r;
-
-	for (i=0; i<100; i++)
-	{
-		r = xchg(0xff);
-		if (r != 0xff)  break;
-	}
-	return  (int8_t) r;
-}
-
-uint8_t erase(){
     uint8_t response,i,r;
     uint8_t arg = 0x08;
     uint8_t command = 0x2a;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    /* wait some clock cycles */
     sd_raw_rec_byte();
     Serial.print("Starting erase procedure");
     select_card(); // select SD card first
@@ -1141,16 +1082,165 @@ uint8_t erase(){
         Serial.print("IMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
         unselect_card();
         return 0;
-    }else{
+    }
+    else
+    {
+        Serial.print("SET_BLOCKLEN to 1 byte\n");
+    }
+    //r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
+    //Serial.println(r,HEX);
+    sd_raw_send_byte(0x40 | 0x2a);
+    sd_wait_for_data();
+
+    //sd_raw_rec_byte();
+    Serial.println(sd_raw_rec_byte(),HEX);
+    // sd_raw_send_byte(0xfe);
+    sd_raw_send_byte((arg >> 0) & 0xff);
+    //Serial.println((arg >> 0) & 0xff,HEX);
+
+    /*CRC16 CCITT*/
+    //CRC16 is calculated over data given/sent (block length*n_frames_sent)
+    //SPI does not force CRC checking, but i'll enable it anyway
+    //CRC16=size(command+argument) (38 bits)
+    sd_raw_send_byte((crc >> 8) & 0xff);
+    sd_raw_send_byte((crc >> 0) & 0xff);
+    // sd_raw_send_byte(0xff);
+    // sd_raw_send_byte(0xff);
+    /* receive response */
+    for(i = 0; i < 10; ++i)
+    {
+        response = sd_raw_rec_byte();
+        if(response != 0xff)
+            break;
+    }
+
+    return response;
+
+}
+
+static  uint8_t erase()
+{
+    uint8_t response,i,r;
+    uint8_t arg = 0x08;
+    uint8_t command = 0x2a;
+    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    sd_raw_rec_byte();
+    Serial.println("Starting erase procedure");
+    select_card(); // select SD card first
+    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
+    if(sd_raw_send_command(CMD_SET_BLOCKLEN, 1))
+    {
+        Serial.print("IMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
+        unselect_card();
+        return 0;
+    }
+    else
+    {
         Serial.print("SET_BLOCKLEN to 1 byte\n");
     }
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
     Serial.println(r);
     sd_wait_for_data();
     xchg(0xfe);
-    xchg(arg);        // ignore dummy checksum
-    xchg((crc >> 8) & 0xff);       
-    xchg((crc >> 0) & 0xff);   
-    r=sd_wait_for_data();
+    xchg(arg);
+    xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+    sd_wait_for_data();
 	return r;
+}
+
+static  unsigned char  xchg(unsigned char  c)
+{
+    SPDR = c;
+    while ((SPSR & (1<<SPIF)) == 0)  ;
+    return  SPDR;
+}
+
+static void ReadCardStatus()
+{
+    cardstatus[0] = sd_raw_send_command(CMD_SEND_STATUS, 0);
+    cardstatus[1] = xchg(0xff);
+    Serial.print("ReadCardStatus = ");
+    Serial.print(cardstatus[0]);
+    Serial.print(",");
+    Serial.print(cardstatus[1]);
+    Serial.print("\n");
+    xchg(0xff);
+}
+
+static void ShowCardStatus(void)
+{
+    ReadCardStatus();
+    Serial.print("Password status: ");
+    if ((cardstatus[1] & 0x01) ==  0)  Serial.print("un");
+    Serial.print("locked\n");
+}
+
+static int8_t  sd_wait_for_data(void)
+{
+    int16_t i;
+    uint8_t r;
+    //select_card();
+    for (i=0; i<100; i++)
+    {
+        r = xchg(0xff);
+        if (r != 0xff)  break;
+    }
+    return  (int8_t) r;
+}
+
+static void  LoadGlobalPWD(void)
+{
+    uint8_t                         i;
+
+    for (i=0; i<GLOBAL_PWD_LEN; i++)
+    {
+        pwd[i] = pgm_read_byte(&(GlobalPWDStr[i]));
+    }
+    pwd_len = GLOBAL_PWD_LEN;
+}
+
+
+static  uint8_t pwd_lock()
+{
+    LoadGlobalPWD();
+    uint8_t response,r;
+    uint16_t i;
+    uint8_t arg = 0x01;
+    uint8_t command = 0x2a;
+    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    sd_raw_rec_byte();
+    Serial.println("Starting locking procedure");
+    select_card(); // select SD card first
+    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
+    sd_raw_send_command(CMD_SET_BLOCKLEN, 512);
+    r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
+    Serial.println(r);
+    sd_wait_for_data();
+    Serial.println("Waiting done");
+    xchg(0xfe);
+    xchg(arg);
+    Serial.println(arg);
+    xchg(pwd_len);
+    Serial.println(pwd_len);
+    for (i=0; i<512; i++)                          // need to send one full block for CMD42
+    {
+        if (i < pwd_len)
+        {
+            xchg(pwd[i]);                                   // send each byte via SPI
+        }
+        else
+        {
+
+            xchg(0xff);
+        }
+    }
+    xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+	Serial.println((crc >> 8) & 0xff,BIN);
+    Serial.println((crc >> 0) & 0xff,BIN);
+    r =  sd_wait_for_data();
+	Serial.println("Done");
+	return r;
+    
 }
