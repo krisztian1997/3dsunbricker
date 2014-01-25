@@ -172,9 +172,9 @@ static unsigned char  xchg(unsigned char c);
 static uint8_t send_cmd42_erase();
 static uint8_t erase();
 static uint8_t pwd_lock();
-uint8_t      pwd[16];
+uint8_t pwd[17];
 uint8_t pwd_len;
-char GlobalPWDStr[16] = {'F', 'o', 'u', 'r', 't', 'h', ' ', 'A','m', 'e', 'n', 'd', 'm', 'e', 'n', 't'};
+char GlobalPWDStr[6] = {'F', 'o', 'u', 'r', 't', 'h'};
 #define  GLOBAL_PWD_LEN      (sizeof(GlobalPWDStr))
 /**
  * \ingroup sd_raw
@@ -354,7 +354,8 @@ uint8_t sd_raw_init()
     /*raw_block_written = 1;*/
 #endif
     /*if(!sd_raw_read(0, raw_block, sizeof(raw_block)))
-        return 0;*/
+        return 0;
+		*/
 #endif
 
     return 1;
@@ -1161,9 +1162,9 @@ static void ReadCardStatus()
     cardstatus[0] = sd_raw_send_command(CMD_SEND_STATUS, 0);
     cardstatus[1] = xchg(0xff);
     Serial.print("ReadCardStatus = ");
-    Serial.print(cardstatus[0]);
+    Serial.print(cardstatus[0], BIN);
     Serial.print(",");
-    Serial.print(cardstatus[1]);
+    Serial.print(cardstatus[1], BIN);
     Serial.print("\n");
     xchg(0xff);
 }
@@ -1201,6 +1202,7 @@ static void  LoadGlobalPWD(void)
 }
 
 
+
 static  uint8_t pwd_lock()
 {
     LoadGlobalPWD();
@@ -1212,27 +1214,23 @@ static  uint8_t pwd_lock()
     sd_raw_rec_byte();
     Serial.println("Starting locking procedure");
     select_card(); // select SD card first
-    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
-    sd_raw_send_command(CMD_SET_BLOCKLEN, 512);
+    /*sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
+    r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
+	Serial.println(r);
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
     Serial.println(r);
     sd_wait_for_data();
     Serial.println("Waiting done");
-    xchg(0xfe);
+	xchg(0xfe);
     xchg(arg);
     Serial.println(arg);
     xchg(pwd_len);
     Serial.println(pwd_len);
-    for (i=0; i<512; i++)                          // need to send one full block for CMD42
+    for (i=0; i<=pwd_len; i++)                          // need to send one full block for CMD42
     {
         if (i < pwd_len)
         {
             xchg(pwd[i]);                                   // send each byte via SPI
-        }
-        else
-        {
-
-            xchg(0xff);
         }
     }
     xchg((crc >> 8) & 0xff);
@@ -1242,5 +1240,4 @@ static  uint8_t pwd_lock()
     r =  sd_wait_for_data();
 	Serial.println("Done");
 	return r;
-    
-}
+	}
