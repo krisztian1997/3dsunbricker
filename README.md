@@ -40,9 +40,9 @@ Okay so you first want to install the arduino development application in windows
 </table>
 
 In case if you still dont understand, please take a look at those schematics:         
-<a href="http://arduinodiy.files.wordpress.com/2012/03/sd-card.jpg">SD card schematic with voltage divider</a>    
-<a href="http://img441.imageshack.us/img441/2391/schematicuo7.jpg">Another SD card schematic with a different voltage divider</a>   
-<a href="http://tinyurl.com/p4dyv8q">Arduino UNO pinout</a>   
+<a href="http://arduinodiy.files.wordpress.com/2012/03/sd-card.jpg">SD card schematic with voltage divider</a>,     
+<a href="http://img441.imageshack.us/img441/2391/schematicuo7.jpg">Another SD card schematic with a different voltage divider</a>,   
+<a href="http://tinyurl.com/p4dyv8q">Arduino UNO pinout</a>, 
 <a href="http://imageshack.us/a/img18/7048/tvj.png">3DS solder points</a></li>
 <li> Power up the arduino</li>
 <li> Power up your 3DS (XL) console</li>
