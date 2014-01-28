@@ -1,6 +1,14 @@
-/*
-*	Copyright (c) by Roland Riegel, Ryuga, Krisztian		  
-*/
+/** 
+  * Copyright (c) by Roland Riegel, Ryuga, Krisztian      
+  *
+  * This piece of code is dedicated to my favorite user from gbatemp, crazyace2011.
+  *	If you wonder why, just read the following quotes by him:
+  * Quotes from http://gbatemp.net/threads/has-anyone-with-a-brick-been-able-to-recover.360647/: im trying to understand something everyone is spitting out information that they truly don't know. the emmc is wiped or locked the nand is wiped out. no one has the hardware to know 100% but everyone is talking like they know if you knew you would have a way of fixing not just talking about whats wrong. people are just claiming to know what is wrong when they don't have the equipment back up the theory.
+  * im not saying you per say im just saying that everyone is talking like they are Einstein and know what is going on. who's to say that something is blocking the emmc controller not the emmc controller itself I don't know what it could be but im not throwing out stuff. im not ranting that you are doing it. its just people say something tech about the insides of a 3ds but the thing is no one know whats going on inside the 3ds and what the brick code actually did to the unit. yes we know that the system isn't responding to the nand that was installed by Nintendo but we don't know exactly what the gateway brick code did. 
+  * I already said that I don't know how but you smart ass people think you know but honestly you don't know shit about it either. no one said you had to answer to my comment so stfu and ignore my post
+  * like we need more pointless 3ds brick threads real mature. must be a bunch of little kids that think they know everything. typical
+  * Quote from http://www.maxconsole.com/maxcon_forums/threads/280010-Update-on-RMAing-my-3DS?p=1671397#post1671397:im on gbatemp and there is a bunch of little kids that think they know everything and every theory. its like when a child tells a parent I know I know I know gets annoying
+  */
 #include <string.h>
 #include <avr/io.h>
 #include <sd_raw_roland.h>
@@ -149,9 +157,8 @@ static uint8_t raw_block_written;
 #endif
 #endif
 
-/* card type state */
-static uint8_t sd_raw_card_type;
-uint8_t cardstatus[2];
+
+
 /* private helper functions */
 static void sd_raw_send_byte(uint8_t b);
 static uint8_t sd_raw_rec_byte();
@@ -162,15 +169,20 @@ static void ShowCardStatus();
 static void  LoadGlobalPWD(void);
 static int8_t  sd_wait_for_data();
 static unsigned char  xchg(unsigned char c);
-
 static uint8_t send_cmd42_erase();
 static uint8_t erase();
 static uint8_t pwd_lock();
 static uint8_t pwd_unlock();
 static void menu();
-uint8_t pwd[17];
+
+/* Variable declarations */
+static uint8_t sd_raw_card_type; // card type state
+uint8_t cardstatus[2]; // card status array to store a R2 response
+uint8_t pwd[17]; 
 uint8_t pwd_len;
-char GlobalPWDStr[6] = {'F', 'o', 'u', 'r', 't', 'h'};
+char GlobalPWDStr[16] = {'T', 'W', 'I', 'L', 'I', 'G', 'S', 'P', 'O', 'R', 'K', 'L', 'E', 'P', 'A', 'H'}; // password used to lock the card
+unsigned char mess[12] ={0x15, 0x47, 0xC3, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF}; // dont touch this array, its used by the CRC16
+uint8_t terminateExecution = 0;
 #define  GLOBAL_PWD_LEN      (sizeof(GlobalPWDStr))
 /**
  * \ingroup sd_raw
@@ -190,7 +202,7 @@ uint8_t sd_raw_init()
     configure_pin_sck();
     configure_pin_ss();
     configure_pin_miso();
-    Serial.print("Enabled outputs/inputs\n");
+    Serial.print("Enabled outputs/inputs");
     unselect_card();
 
     /* initialize SPI with lowest frequency; max. 400kHz during identification mode of card */
@@ -203,23 +215,23 @@ uint8_t sd_raw_init()
            (1 << SPR1) | /* Clock Frequency: f_OSC / 128 */
            (1 << SPR0);
     SPSR &= ~(1 << SPI2X); /* No doubled clock frequency */
-    Serial.print("Initialized SPI with 400khz frequency\n");
+    Serial.print("\nInitialized SPI with 400khz frequency");
     /* initialization procedure */
     sd_raw_card_type = 0;
 
     if(!sd_raw_available())
         return 0;
-    Serial.print("Waiting for the cart to start \n");
+    Serial.print("\nWaiting for the cart to start ");
     /* card needs 74 cycles minimum to start up */
     for(uint8_t i = 0; i < 10; ++i)
     {
         /* wait 8 clock cycles */
         sd_raw_rec_byte();
     }
-    Serial.print("Card is awake, selecting it\n");
+    Serial.print("\nCard is awake, selecting it");
     /* address card */
     select_card();
-    Serial.print("Selected card, reseting\n");
+    Serial.print("\nSelected card, reseting");
     /* reset card */
     uint8_t response;
     for(uint16_t i = 0; ; ++i)
@@ -231,12 +243,12 @@ uint8_t sd_raw_init()
         if(i == 0x1ff)
         {
             unselect_card();
-            Serial.print("Card reseted but no IDLE answer\n");
+            Serial.print("\nCard reseted but no IDLE answer");
             return 0;
 
         }
     }
-    Serial.print("Card reseted sucesfully\n");
+    Serial.print("\nCard reseted sucesfully");
 #if SD_RAW_SDHC
     /* check for version of SD card specification */
     response = sd_raw_send_command(CMD_SEND_IF_COND, 0x100 /* 2.7V - 3.6V */ | 0xaa /* test pattern */);
@@ -251,7 +263,7 @@ uint8_t sd_raw_init()
 
         /* card conforms to SD 2 card specification */
         sd_raw_card_type |= (1 << SD_RAW_SPEC_2);
-        Serial.print("This is an SDHC (SD2) card\n");
+        Serial.print("\nThis is an SDHC (SD2) card");
     }
     else
 #endif
@@ -263,12 +275,12 @@ uint8_t sd_raw_init()
         {
             /* card conforms to SD 1 card specification */
             sd_raw_card_type |= (1 << SD_RAW_SPEC_1);
-            Serial.print("This is an SD (SD1) card\n");
+            Serial.print("\nThis is an SD (SD1) card");
         }
         else
         {
             /* MMC card */
-            Serial.print("MMC card\n");
+            Serial.print("\nMMC card");
         }
     }
 
@@ -296,7 +308,7 @@ uint8_t sd_raw_init()
         if(i == 0x7fff)
         {
             unselect_card();
-            Serial.print("TIMEOUT, card not ready for some reason\n");
+            Serial.print("\nTIMEOUT, card not ready for some reason");
             return 0;
         }
     }
@@ -322,7 +334,7 @@ uint8_t sd_raw_init()
     /* set block size to 512 bytes */
     if(sd_raw_send_command(CMD_SET_BLOCKLEN, 512))
     {
-        Serial.print("Set SET_BLOCKLEN to 512 byte\n");
+        Serial.print("\nSet SET_BLOCKLEN to 512 byte");
         unselect_card();
         return 0;
     }
@@ -343,44 +355,12 @@ uint8_t sd_raw_init()
 		}
 	}
     ShowCardStatus();
-    //Serial.print(send_cmd42_erase(),BIN);
     Serial.println();
     /* switch to highest SPI frequency possible */
     SPCR &= ~((1 << SPR1) | (1 << SPR0)); /* Clock Frequency: f_OSC / 4 */
     SPSR |= (1 << SPI2X); /* Doubled Clock Frequency: f_OSC / 2 */
-    Serial.print("Switched to highest SPI frequency\n");
-#if !SD_RAW_SAVE_RAM
-    /* the first block is likely to be accessed first, so precache it here */
-    /*raw_block_address = (offset_t) -1;*/
-#if SD_RAW_WRITE_BUFFERING
-    /*raw_block_written = 1;*/
-#endif
-    /*if(!sd_raw_read(0, raw_block, sizeof(raw_block)))
-        return 0;
-		*/
-#endif
-
+    Serial.print("\nSwitched to highest SPI frequency");
     return 1;
-}
-
-
-void menu(){
-		uint8_t						r;
-		r = 0;
-		Serial.write("\r\n----SD LOCKER MENU----");
-		Serial.write("\r\nProgrammed by Krisztian and Ryuga");
-		Serial.write("\r\nThanks Coto for your awesome CRC16 algorithm");
-		Serial.write("\r\n----------------------");
-		Serial.write("\r\nu - UNLOCK");
-		Serial.write("\r\nl - LOCK");
-		Serial.write("\r\ne - ERASE");
-		Serial.write("\r\n----------------------");
-		while(!Serial.available()) ;
-		r = Serial.read();
-		if      (r == 'u')  Serial.println(pwd_unlock());
-		else if (r == 'l')  Serial.println(pwd_lock());
-		else if (r == 'e')  Serial.println(erase());
-		else				Serial.write("\r\nERROR: Wrong input, initializing SD card and showing info.");
 }
 
 /**
@@ -1051,12 +1031,17 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
     return 1;
 }
 
+//******
 
-/* CUSTOM CODE */
-unsigned char mess[12] =
-{
-    0x15, 0x47, 0xC3, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF
-};
+/**
+ * \ingroup sd_raw
+ * Send a command followed by a CRC16 checksum to the memory card which responses with a R1 response (and possibly others).
+ *
+ * \param[in] command The command to send.
+ * \param[in] arg The argument for command.
+ * \returns The command answer.
+ */
+ 
 uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg)
 {
     uint8_t response,i;
@@ -1087,37 +1072,12 @@ uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg)
     return response;
 }
 
-static  uint8_t erase()
-{
-    uint8_t response,i,r;
-    uint8_t arg = 0x08;
-    uint8_t command = 0x2a;
-    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
-    sd_raw_rec_byte();
-    Serial.println("Starting erase procedure");
-    select_card(); // select SD card first
-    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
-    if(sd_raw_send_command(CMD_SET_BLOCKLEN, 1))
-    {
-        Serial.print("IMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
-        unselect_card();
-        return 0;
-    }
-    else
-    {
-        Serial.print("SET_BLOCKLEN to 1 byte\n");
-    }
-    r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
-    Serial.println(r);
-    sd_wait_for_data();
-    xchg(0xfe);
-    xchg(arg);
-    xchg((crc >> 8) & 0xff);
-    xchg((crc >> 0) & 0xff);
-    sd_wait_for_data();
-	return r;
-}
-
+/**
+ * \ingroup sd_raw
+ * Exchange some data with the card over the MOSI
+ *
+ * \returns N/A
+ */
 static  unsigned char  xchg(unsigned char  c)
 {
     SPDR = c;
@@ -1125,27 +1085,44 @@ static  unsigned char  xchg(unsigned char  c)
     return  SPDR;
 }
 
+/**
+ * \ingroup sd_raw
+ * Send CMD_SEND_STATUS to the card and store the R2 reponse in an array
+ *
+ * \returns N/A
+ */
 static void ReadCardStatus()
 {
     cardstatus[0] = sd_raw_send_command(CMD_SEND_STATUS, 0);
     cardstatus[1] = xchg(0xff);
-    Serial.print("ReadCardStatus = ");
+    Serial.print("\nReadCardStatus = ");
     Serial.print(cardstatus[0], BIN);
     Serial.print(",");
     Serial.print(cardstatus[1], BIN);
-    Serial.print("\n");
     xchg(0xff);
 }
 
+/**
+ * \ingroup sd_raw
+ * Show if the card is locked or unlocked
+ *
+ * \returns N/A
+ */
 static void ShowCardStatus(void)
 {
     ReadCardStatus();
-    Serial.print("Password status: ");
+    Serial.print("\nPassword status: ");
     if ((cardstatus[1] & 0x01) ==  0)  Serial.print("un");
     Serial.print("locked\n");
 }
 
-static int8_t  sd_wait_for_data(void)
+/**
+ * \ingroup sd_raw
+ * Sends some data to the card untill the DAT0 line becomes high again after a busy response.
+ *
+ * \returns N/A
+ */
+static int8_t sd_wait_for_data(void)
 {
     int16_t i;
     uint8_t r;
@@ -1158,7 +1135,13 @@ static int8_t  sd_wait_for_data(void)
     return  (int8_t) r;
 }
 
-static void  LoadGlobalPWD(void)
+/**
+ * \ingroup sd_raw
+ * Loads the password into an array and converts the caracters to binary.
+ *
+ * \returns N/A
+ */
+static void LoadGlobalPWD(void)
 {
     uint8_t                         i;
 
@@ -1169,9 +1152,50 @@ static void  LoadGlobalPWD(void)
     pwd_len = GLOBAL_PWD_LEN;
 }
 
+/**
+ * \ingroup sd_raw
+ * Send erase command followed by the coresponding CRC16 checksum
+ *
+ * \returns uint8_t with the R1 response
+ */
+static uint8_t erase()
+{
+    uint8_t response,i,r;
+    uint8_t arg = 0x08;
+    uint8_t command = 0x2a;
+    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    sd_raw_rec_byte();
+    Serial.println("\nStarting erase procedure");
+    select_card(); // select SD card first
+    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
+    if(sd_raw_send_command(CMD_SET_BLOCKLEN, 1))
+    {
+        Serial.print("\nIMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
+        unselect_card();
+        return 0;
+    }
+    else
+    {
+        Serial.print("\nSET_BLOCKLEN to 1 byte\n");
+    }
+    r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
+    Serial.println(r);
+    sd_wait_for_data();
+    xchg(0xfe);
+    xchg(arg);
+    xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+    sd_wait_for_data();
+	return r;
+}
 
-
-static  uint8_t pwd_lock()
+/**
+ * \ingroup sd_raw
+ * Send the lock command to the card with the password define at the start of the code
+ *
+ * \returns uint8_t with the R1 response
+ */
+static uint8_t pwd_lock()
 {
     LoadGlobalPWD();
     uint8_t response,r;
@@ -1180,20 +1204,15 @@ static  uint8_t pwd_lock()
     uint8_t command = 0x2a;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     sd_raw_rec_byte();
-    Serial.println("Starting locking procedure");
+    Serial.print("\nStarting locking procedure");
     select_card(); // select SD card first
-    /*sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
+    /*r=sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
     r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
-	/*Serial.println(r);*/
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
-    /*Serial.println(r);*/
     sd_wait_for_data();
-    /*Serial.println("Waiting done");*/
 	xchg(0xfe);
     xchg(arg);
-    /*Serial.println(arg);*/
     xchg(pwd_len);
-    /*Serial.println(pwd_len);*/
     for (i=0; i<=pwd_len; i++)                          // need to send one full block for CMD42
     {
         if (i < pwd_len)
@@ -1203,15 +1222,18 @@ static  uint8_t pwd_lock()
     }
     xchg((crc >> 8) & 0xff);
     xchg((crc >> 0) & 0xff);
-	/*Serial.println((crc >> 8) & 0xff,BIN);
-    Serial.println((crc >> 0) & 0xff,BIN);*/
     r =  sd_wait_for_data();
-	Serial.println("Done");
+	Serial.print("\nDone");
 	return r;
 }
 	
-	
-static  uint8_t pwd_unlock()
+/**
+ * \ingroup sd_raw
+ * Send the unlock command to the card with the password define at the start of the code
+ *
+ * \returns uint8_t with the R1 response
+ */
+static uint8_t pwd_unlock()
 {
 	LoadGlobalPWD();
     uint8_t response,r;
@@ -1220,20 +1242,15 @@ static  uint8_t pwd_unlock()
     uint8_t command = 0x2a;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     sd_raw_rec_byte();
-    Serial.println("\r\nStarting unlocking procedure");
+    Serial.print("\nStarting unlocking procedure");
     select_card(); // select SD card first
-    /*sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
+    /*r=sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
     r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
-	/*Serial.println(r);*/
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
-    /*Serial.println(r);*/
     sd_wait_for_data();
-    /*Serial.println("Waiting done");*/
 	xchg(0xfe);
     xchg(arg);
-    /*Serial.println(arg);*/
     xchg(pwd_len);
-    /*Serial.println(pwd_len);*/
     for (i=0; i<=pwd_len; i++)                          // need to send one full block for CMD42
     {
         if (i < pwd_len)
@@ -1243,9 +1260,38 @@ static  uint8_t pwd_unlock()
     }
     xchg((crc >> 8) & 0xff);
     xchg((crc >> 0) & 0xff);
-	/*Serial.println((crc >> 8) & 0xff,BIN);
-    Serial.println((crc >> 0) & 0xff,BIN);*/
     r =  sd_wait_for_data();
-	Serial.println("Done");
+	Serial.print("\nDone");
 	return r;
+}
+
+/**
+ * \ingroup sd_raw
+ * Prints the menu over the serial line
+ *
+ * \returns N/A
+ */
+static void menu(){
+		uint8_t						r;
+		r = 0;
+		Serial.print("\n----SD LOCKER MENU----");
+		Serial.print("\nProgrammed by Krisztian and Ryuga");
+		Serial.print("\nThanks Coto for your awesome CRC16 algorithm");
+		Serial.print("\nThis program is dedicated to crazyace2011 @GBAtemp");
+		Serial.print("\n----------------------");
+		Serial.print("\nu - UNLOCK");
+		Serial.print("\nl - LOCK");
+		Serial.print("\ne - ERASE");
+		Serial.print("\nx - TERMINATE EXECUTION");
+		Serial.print("\n----------------------");
+		while(!Serial.available()) ;
+		r = Serial.read();
+		if      (r == 'u' || r == 'U')  pwd_unlock();
+		else if (r == 'l' || r == 'L')  pwd_lock();
+		else if (r == 'e' || r == 'E')  erase();
+		else if (r == 'x' || r == 'X')  terminateExecution = 1;
+		else  Serial.print("\nERROR: Wrong input.");
+		if(!terminateExecution) {
+			menu();
+		}
 }

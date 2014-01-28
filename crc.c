@@ -1,3 +1,7 @@
+/**
+  *	Thanks Coto for this awesome piece of code.
+  *
+  */
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
