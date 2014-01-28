@@ -11,13 +11,34 @@ Okay so you first want to install the arduino development application in windows
 **Short instruction of using the arduino with my code:**
 <ol>
 <li> If you didnt did it already, program the Arduino with my code </li>
-<li>  Connect the 3DS to the arduino according to the following schematic (you will need an SD card shield, or a voltage divider):    
-  3DS | ARDUINO   
-  CMD -> MOSI  
-  DAT0 -> MISO   
-  DAT3 -> CS/SS    
-  CLK -> CLK      
-  GND -> GND   
+<li>  Connect the 3DS to the arduino according to the following schematic (you will need an SD card shield, or a voltage divider):     
+<table border="0">
+<tr>
+<th>3DS</th>
+<th>ARDUINO</th>
+</tr>
+<tr>
+<td>CMD</td>
+<td>MOSI</td>
+</tr>
+<tr>
+<td>DAT0</td>
+<td>MISO</td>
+</tr>
+<tr>
+<td>DAT3</td>
+<td>CS/SS</td>
+</tr>
+<tr>
+<td>CLK</td>
+<td>CLK</td>
+</tr>
+<tr>
+<td>GND</td>
+<td>GND</td>
+</tr>
+</table>
+
 In case if you still dont understand, please take a look at those schematics:         
 <a href="http://arduinodiy.files.wordpress.com/2012/03/sd-card.jpg">SD card schematic with voltage divider</a>    
 <a href="http://img441.imageshack.us/img441/2391/schematicuo7.jpg">Another SD card schematic with a different voltage divider</a>   
