@@ -55,7 +55,7 @@ In case if you still dont understand, please take a look at those schematics:
 <a href="http://img441.imageshack.us/img441/2391/schematicuo7.jpg">Another SD card schematic with a different voltage divider</a>,   
 <a href="http://tinyurl.com/p4dyv8q">Arduino UNO pinout</a>, 
 <a href="http://imageshack.us/a/img18/7048/tvj.png">3DS solder points</a>
-<a href="http://i.imgur.com/ZrWd27b.jpg"><img src="http://i.imgur.com/ZrWd27b.jpg" /></a>
+<a href="https://dl.dropboxusercontent.com/u/33926727/3ds/duino.png"><img src="https://dl.dropboxusercontent.com/u/33926727/3ds/duino.pngg" /></a>
 </li>
 <li> Power up the arduino</li>
 <li> Power up your 3DS (XL) console</li>
