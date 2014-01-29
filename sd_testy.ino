@@ -22,8 +22,9 @@ int print_info()
     Serial.print("/");
     Serial.print(sdinfo.manufacturing_year,DEC);
     Serial.println();
-    Serial.print("Size: ");
-    Serial.print(sdinfo.capacity,DEC);
+    //Commented for now untill I can fix the int64 printing
+    /*Serial.print("Size: ");
+    Serial.print(sdinfo.capacity,DEC);*/
     Serial.println();
     Serial.print("Copied: ");
     Serial.print(sdinfo.flag_copy,DEC);
