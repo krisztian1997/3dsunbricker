@@ -221,17 +221,16 @@ uint8_t sd_raw_init()
 
     if(!sd_raw_available())
         return 0;
-    Serial.print("\nWaiting for the cart to start ");
+    Serial.print("\nWaiting the minimum 80 cycles for warm up");
     /* card needs 74 cycles minimum to start up */
     for(uint8_t i = 0; i < 10; ++i)
     {
         /* wait 8 clock cycles */
         sd_raw_rec_byte();
     }
-    Serial.print("\nCard is awake, selecting it");
     /* address card */
     select_card();
-    Serial.print("\nSelected card, reseting");
+    Serial.print("\nPulled CS line high to start communication");
     /* reset card */
     uint8_t response;
     for(uint16_t i = 0; ; ++i)
@@ -243,12 +242,12 @@ uint8_t sd_raw_init()
         if(i == 0x1ff)
         {
             unselect_card();
-            Serial.print("\nCard reseted but no IDLE answer");
+            Serial.print("\nReset command sent on MOSI, but no answer from the slave. Please check your card connection/soldering");
             return 0;
 
         }
     }
-    Serial.print("\nCard reseted sucesfully");
+    Serial.print("\nCard is in IDLE. Checking if the voltage is correct.");
 #if SD_RAW_SDHC
     /* check for version of SD card specification */
     response = sd_raw_send_command(CMD_SEND_IF_COND, 0x100 /* 2.7V - 3.6V */ | 0xaa /* test pattern */);
@@ -308,7 +307,7 @@ uint8_t sd_raw_init()
         if(i == 0x7fff)
         {
             unselect_card();
-            Serial.print("\nTIMEOUT, card not ready for some reason");
+            Serial.print("\nCard is not ready for some reasons, stopping communication with the slave");
             return 0;
         }
     }
@@ -334,16 +333,19 @@ uint8_t sd_raw_init()
     /* set block size to 512 bytes */
     if(sd_raw_send_command(CMD_SET_BLOCKLEN, 512))
     {
-        Serial.print("\nSet SET_BLOCKLEN to 512 byte");
+        Serial.print("\nCan't set BLOCKLEN to 512 bytes");
         unselect_card();
         return 0;
-    }
+    }else{
+		Serial.print("\nSet SET_BLOCKLEN to 512 byte");
+	}
     ShowCardStatus();
     /* deaddress card */
     unselect_card();
     /* erase procedure, comment this if you dont want to erase your card */
     Serial.println();
 	if(Serial){
+		select_card();
 		menu();
 	}else{
 		if(eraser == 0){
