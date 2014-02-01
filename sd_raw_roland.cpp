@@ -173,6 +173,7 @@ static uint8_t send_cmd42_erase();
 static uint8_t erase();
 static uint8_t pwd_lock();
 static uint8_t pwd_unlock();
+static uint8_t sd_raw_send_reset();
 static void menu();
 
 /* Variable declarations */
@@ -213,9 +214,9 @@ uint8_t sd_raw_init()
            (0 << CPOL) | /* Clock Polarity: SCK low when idle */
            (0 << CPHA) | /* Clock Phase: sample on rising SCK edge */
            (1 << SPR1) | /* Clock Frequency: f_OSC / 128 */
-           (1 << SPR0);
+           (0 << SPR0);
     SPSR &= ~(1 << SPI2X); /* No doubled clock frequency */
-    Serial.print("\nInitialized SPI with 400khz frequency");
+    Serial.print("\nInitialized SPI with 250khz frequency");
     /* initialization procedure */
     sd_raw_card_type = 0;
 
@@ -223,19 +224,19 @@ uint8_t sd_raw_init()
         return 0;
     Serial.print("\nWaiting the minimum 80 cycles for warm up");
     /* card needs 74 cycles minimum to start up */
-    for(uint8_t i = 0; i < 10; ++i)
+    for(uint8_t i = 0; i < 12; ++i)
     {
         /* wait 8 clock cycles */
         sd_raw_rec_byte();
     }
     /* address card */
     select_card();
-    Serial.print("\nPulled CS line high to start communication");
+    Serial.print("\nKeeping CS line on low for communication");
     /* reset card */
     uint8_t response;
     for(uint16_t i = 0; ; ++i)
     {
-        response = sd_raw_send_command(CMD_GO_IDLE_STATE, 0);
+        response = sd_raw_send_reset();
         if(response == (1 << R1_IDLE_STATE))
             break;
 
@@ -1035,6 +1036,24 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
 
 //******
 
+uint8_t sd_raw_send_reset(){
+	uint8_t response,i,r;
+	uint8_t arg = 0x00;
+	uint8_t command = CMD_GO_IDLE_STATE;
+    uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    sd_raw_rec_byte();
+    select_card(); // select SD card first
+    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
+    r=sd_raw_send_command(CMD_GO_IDLE_STATE,0);
+    Serial.println(r);
+    xchg(0xfe);
+    xchg(arg);
+    xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+    sd_wait_for_data();
+	return r;
+}
+
 /**
  * \ingroup sd_raw
  * Send a command followed by a CRC16 checksum to the memory card which responses with a R1 response (and possibly others).
@@ -1047,7 +1066,7 @@ uint8_t sd_raw_get_info(struct sd_raw_info* info)
 uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg)
 {
     uint8_t response,i;
-
+	uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     /* wait some clock cycles */
     sd_raw_rec_byte();
 
@@ -1061,7 +1080,8 @@ uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg)
     //CRC16 is calculated over data given/sent (block length*n_frames_sent)
     //SPI does not force CRC checking, but i'll enable it anyway
     //CRC16=size(command+argument) (38 bits)
-    sd_raw_send_byte(calc_crc(mess,((command&arg)|command),CRC16STARTBIT));
+    xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
 
     /* receive response */
     for(i = 0; i < 10; ++i)
@@ -1294,6 +1314,6 @@ static void menu(){
 		else if (r == 'x' || r == 'X')  terminateExecution = 1;
 		else  Serial.print("\nERROR: Wrong input.");
 		if(!terminateExecution) {
-			menu();
+			/*menu();*/
 		}
 }
