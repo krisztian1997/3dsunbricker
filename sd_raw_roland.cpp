@@ -185,16 +185,10 @@ char GlobalPWDStr[16] = {'T', 'W', 'I', 'L', 'I', 'G', 'S', 'P', 'O', 'R', 'K', 
 unsigned char mess[12] ={0x15, 0x47, 0xC3, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF}; // dont touch this array, its used by the CRC16
 uint8_t terminateExecution = 0;
 #define  GLOBAL_PWD_LEN      (sizeof(GlobalPWDStr))
-/**
- * \ingroup sd_raw
- * Initializes memory card communication.
- *
- * \returns 0 on failure, 1 on success.
- */
-uint8_t sd_raw_init()
-{	
-	uint8_t eraser = 0; //set this to 1 if you want to erase the card, 0 if you want to set the password, 2 if you want to unlock
-    /* enable inputs for reading card status */
+uint8_t ignited = 0;
+
+void sd_raw_configure(){
+	/* enable inputs for reading card status */
     configure_pin_available();
     configure_pin_locked();
 
@@ -216,7 +210,20 @@ uint8_t sd_raw_init()
            (1 << SPR1) | /* Clock Frequency: f_OSC / 128 */
            (0 << SPR0);
     SPSR &= ~(1 << SPI2X); /* No doubled clock frequency */
-    Serial.print("\nInitialized SPI with 250khz frequency");
+    Serial.print("\nInitialized SPI with 250khz frequency");	
+}
+
+/**
+ * \ingroup sd_raw
+ * Initializes memory card communication.
+ *
+ * \returns 0 on failure, 1 on success.
+ */
+uint8_t sd_raw_init()
+{	
+	if(!ignited){ sd_raw_configure(); /*ignited = 1;*/} else {}
+	uint8_t eraser = 0; //set this to 1 if you want to erase the card, 0 if you want to set the password, 2 if you want to unlock
+    
     /* initialization procedure */
     sd_raw_card_type = 0;
 
@@ -1041,16 +1048,10 @@ uint8_t sd_raw_send_reset(){
 	uint8_t arg = 0x00;
 	uint8_t command = CMD_GO_IDLE_STATE;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
-    sd_raw_rec_byte();
     select_card(); // select SD card first
-    sd_raw_send_command(CMD_CRC_ON_OFF, 0);
     r=sd_raw_send_command(CMD_GO_IDLE_STATE,0);
-    Serial.println(r);
-    xchg(0xfe);
-    xchg(arg);
     xchg((crc >> 8) & 0xff);
     xchg((crc >> 0) & 0xff);
-    sd_wait_for_data();
 	return r;
 }
 
@@ -1301,6 +1302,7 @@ static void menu(){
 		Serial.print("\nThanks Coto for your awesome CRC16 algorithm");
 		Serial.print("\nThis program is dedicated to crazyace2011 @GBAtemp");
 		Serial.print("\n----------------------");
+		Serial.print("\ni - REINITIALIZE");
 		Serial.print("\nu - UNLOCK");
 		Serial.print("\nl - LOCK");
 		Serial.print("\ne - ERASE");
@@ -1312,6 +1314,7 @@ static void menu(){
 		else if (r == 'l' || r == 'L')  pwd_lock();
 		else if (r == 'e' || r == 'E')  erase();
 		else if (r == 'x' || r == 'X')  terminateExecution = 1;
+		else if (r == 'i' || r == 'I')  sd_raw_init();
 		else  Serial.print("\nERROR: Wrong input.");
 		if(!terminateExecution) {
 			/*menu();*/
