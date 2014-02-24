@@ -160,22 +160,26 @@ static uint8_t raw_block_written;
 
 
 /* private helper functions */
-static void sd_raw_send_byte(uint8_t b);
-static uint8_t sd_raw_rec_byte();
-static uint8_t sd_raw_send_command(uint8_t command, uint32_t arg);
-static uint8_t sd_raw_send_command_crc(uint8_t command, uint32_t arg);
-static void ReadCardStatus();
-static void ShowCardStatus();
-static void  LoadGlobalPWD(void);
-static int8_t  sd_wait_for_data();
-static unsigned char  xchg(unsigned char c);
-static uint8_t send_cmd42_erase();
-static uint8_t erase();
-static uint8_t pwd_lock();
-static uint8_t pwd_unlock();
-static uint8_t sd_raw_send_reset();
-static void menu();
-
+static void 					sd_raw_send_byte(uint8_t b);
+static uint8_t 					sd_raw_rec_byte();
+static uint8_t 					sd_raw_send_command(uint8_t command, uint32_t arg);
+static uint8_t 					sd_raw_send_command_crc(uint8_t command, uint32_t arg);
+static void 					ReadCardStatus();
+static void 					ShowCardStatus();
+static void  					LoadGlobalPWD(void);
+static int8_t  					sd_wait_for_data();
+static unsigned char  			xchg(unsigned char c);
+static uint8_t 					send_cmd42_erase();
+static uint8_t 					erase();
+static uint8_t 					pwd_lock();
+static uint8_t 					pwd_unlock();
+static uint8_t 					sd_raw_send_reset();
+static void 					menu();
+static int8_t  					ReadCID(void);
+static void 					unlock_XOR();
+static void 					dedication();
+static inline 					uint32_t byte_swap(uint32_t in);
+void 							PrintHex8(uint8_t *data, uint8_t length);
 /* Variable declarations */
 static uint8_t sd_raw_card_type; // card type state
 uint8_t cardstatus[2]; // card status array to store a R2 response
@@ -358,10 +362,13 @@ uint8_t sd_raw_init()
 	}else{
 		if(eraser == 0){
 			Serial.println(erase(), BIN);
+			Serial.print("\nAutomatically erased the card");
 		}else if(eraser == 1){
 			Serial.println(pwd_lock(), BIN);
+			Serial.print("\nAutomatically locked the card");
 		}else if(eraser == 2){
 			Serial.println(pwd_unlock(), BIN);
+			Serial.print("\nAutomatically unlocked the card");
 		}
 	}
     ShowCardStatus();
@@ -1288,6 +1295,112 @@ static uint8_t pwd_unlock()
 	return r;
 }
 
+void PrintHex8(uint8_t *data, uint8_t length) // prints 8-bit data in hex with leading zeroes
+{
+        Serial.print("0x"); 
+        for (int i=0; i<length; i++) { 
+          if (data[i]<0x10) {Serial.print("0");} 
+          Serial.print(data[i],HEX); 
+          //Serial.print(" "); 
+        }
+}
+
+static inline uint32_t byte_swap (uint32_t in)
+{
+  uint32_t b0 = in & 0xff;
+  uint32_t b1 = (in >> 8) & 0xff;
+  uint32_t b2 = (in >> 16) & 0xff;
+  uint32_t b3 = (in >> 24) & 0xff;
+  uint32_t ret = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+  return ret;
+}
+
+static void unlock_XOR(){
+	// Thanks a lot bkifft for this code, and for helping me fix random and weird bugs in my code
+	// Variables
+	uint32_t 		key[4];
+    uint32_t 		temp;
+    uint8_t 		cid3ds[16];
+	int8_t			response;
+	uint8_t			r;
+	bool			swap;
+	uint8_t arg = 0x02;
+    uint8_t command = 0x2a;
+	//the Vernam cipher key: 17C6987E4401EDDE371AC56865FFB562. thanks to the anonymous donator!
+    Serial.print("\nTrying to unlock the nand with the generated password");
+	//XORpad: 17C6987E4401EDDE371AC56865FFB562 split into 4x4bytes
+    key[0] = 0x17C6987E;
+    key[1] = 0x4401EDDE;
+    key[2] = 0x371AC568;
+    key[3] = 0x65FFB562;
+	
+	//Get the CID from the SDcard/eMMC
+	for (int i=0; i<16; i++)  cid3ds[i] = 0;
+	response = sd_raw_send_command(CMD_SEND_CID, 0);
+	response = sd_wait_for_data();
+	if (response != (int8_t)0xfe)
+	{
+		//Serial.print("\nERROR: FAILED READING CID");
+	}
+	for (int i=0; i<16; i++)
+	{
+		cid3ds[i] = xchg(0xff);
+	}
+	xchg(0xff);							// send the crc
+	uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    Serial.print("\nCID from 3ds stored in uint8_t array: ");
+    PrintHex8((uint8_t*)(cid3ds), 16);
+	Serial.print("\nDEBUG: key byteswap\n");
+    //Swap the bites in the XORpad because of the biteorder
+    if(swap) for (int i = 0; i<=3; ++i) key[i] = byte_swap(key[i]);
+    Serial.print("\nDEBUG: Swapped key: 0x");
+    for (int i=0; i<3; ++i)  Serial.print(key[i], HEX);
+    //print the swapped key and the CID to test if nothing went wrong with it
+    Serial.print("\nDEBUG: CID before XOR and command injection: ");
+	PrintHex8((uint8_t*)(cid3ds), 16);
+    //XOR 32bit of the CID with the XORpad
+    ((uint32_t*) cid3ds)[0] ^= key[0];
+    ((uint32_t*) cid3ds)[1] ^= key[1];
+    ((uint32_t*) cid3ds)[2] ^= key[2];
+    ((uint32_t*) cid3ds)[3] ^= key[3];
+    //construct the payload
+    //((uint8_t*) cid3ds)[0] = 0b00000010; //clear password
+	((uint8_t*) cid3ds)[0] = arg;
+    ((uint8_t*) cid3ds)[1] = 14; //14 byte password
+    Serial.print("\nDEBUG: unlock payload: ");
+    //for (int i = 0; i <16; ++i) Serial.print(((uint8_t*)(cid3ds))[i], HEX);
+	PrintHex8((uint8_t*)(cid3ds), 16);
+	Serial.print("\nExchanging the payload and data");
+	r=sd_raw_send_command(CMD_SET_BLOCKLEN, 16);
+    r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
+	sd_wait_for_data();
+	xchg(0xfe);
+	for (int i = 0; i <16; ++i) xchg(((uint8_t*)(cid3ds))[i] & 0xff);
+	xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+	Serial.print("\nResponse: ");
+	Serial.print(r);
+    //TODO: add function which send all this to the eMMC, first 2 bytes being the CMD and the argument followed by the payload, which is all combined in the cid3ds variable
+}
+
+static void dedication(){
+	Serial.print(F("\nThis piece of code is dedicated to my favorite user from gbatemp, crazyace2011."));
+	Serial.print(F("\nIf you wonder why, just read the following quotes by him: "));
+	Serial.print(F("\nQuotes from http://gbatemp.net/threads/has-anyone-with-a-brick-been-able-to-recover.360647/:\n\"im trying to understand something everyone is spitting out information that they truly don't know."));
+	Serial.print(F("the emmc is wiped or locked the nand is wiped out. no one has the hardware to know 100% but everyone is talking like they know if you knew you would have a way of fixing not just talking about whats wrong."));
+	Serial.print(F("people are just claiming to know what is wrong when they don't have the equipment back up the theory.\"\n"));
+	Serial.print(F("\n\"im not saying you per say im just saying that everyone is talking like they are Einstein and know what is going on. who's to say that something is blocking the emmc controller not the emmc controller "));
+	Serial.print(F("itself I don't know what it could be but im not throwing out stuff. im not ranting that you are doing it. its just people say something tech about the insides of a 3ds but the thing is no one know whats "));
+	Serial.print(F("going on inside the 3ds and what the brick code actually did to the unit. yes we know that the system isn't responding to the nand that was installed by Nintendo but we don't know exactly what the gateway brick code did.\""));
+	Serial.print(F("\n\"I already said that I don't know how but you smart ass people think you know but honestly you don't know shit about it either. no one said you had to answer to my comment so stfu and ignore my post\""));
+	Serial.print(F("\n\"like we need more pointless 3ds brick threads real mature. must be a bunch of little kids that think they know everything. typical\""));
+	Serial.print(F("\nQuote from http://www.maxconsole.com/maxcon_forums/threads/280010-Update-on-RMAing-my-3DS?p=1671397#post1671397:\n\"im on gbatemp and there is a bunch of little kids that think they know everything and every theory. "));
+	Serial.print(F("its like when a child tells a parent I know I know I know gets annoying\"\n"));
+	Serial.print(F("\nAnyway, true shoutout to my man inian who played my brick guinea pig and all the fellas who gave constructive feedback on the \"Has anyone with a brick been able to recover\" thread, you know who you are."));
+	Serial.print(F("\nBig thanks to the anonymous donor for the Vernam cipher key / XOR pad"));
+	menu();
+}
+
 /**
  * \ingroup sd_raw
  * Prints the menu over the serial line
@@ -1306,6 +1419,8 @@ static void menu(){
 		Serial.print("\nu - UNLOCK");
 		Serial.print("\nl - LOCK");
 		Serial.print("\ne - ERASE");
+		Serial.print("\na - XOR");
+		Serial.print("\nd - DEDICATION");
 		Serial.print("\nx - TERMINATE EXECUTION");
 		Serial.print("\n----------------------");
 		while(!Serial.available()) ;
@@ -1315,8 +1430,11 @@ static void menu(){
 		else if (r == 'e' || r == 'E')  erase();
 		else if (r == 'x' || r == 'X')  terminateExecution = 1;
 		else if (r == 'i' || r == 'I')  sd_raw_init();
+		else if (r == 'a' || r == 'A')  unlock_XOR();
+		else if (r == 'd' || r == 'D')  dedication();
 		else  Serial.print("\nERROR: Wrong input.");
 		if(!terminateExecution) {
 			/*menu();*/
 		}
 }
+
