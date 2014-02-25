@@ -1,14 +1,7 @@
 /** 
   * Copyright (c) by Roland Riegel, Ryuga, Krisztian      
   *
-  * This piece of code is dedicated to my favorite user from gbatemp, crazyace2011.
-  *	If you wonder why, just read the following quotes by him:
-  * Quotes from http://gbatemp.net/threads/has-anyone-with-a-brick-been-able-to-recover.360647/: im trying to understand something everyone is spitting out information that they truly don't know. the emmc is wiped or locked the nand is wiped out. no one has the hardware to know 100% but everyone is talking like they know if you knew you would have a way of fixing not just talking about whats wrong. people are just claiming to know what is wrong when they don't have the equipment back up the theory.
-  * im not saying you per say im just saying that everyone is talking like they are Einstein and know what is going on. who's to say that something is blocking the emmc controller not the emmc controller itself I don't know what it could be but im not throwing out stuff. im not ranting that you are doing it. its just people say something tech about the insides of a 3ds but the thing is no one know whats going on inside the 3ds and what the brick code actually did to the unit. yes we know that the system isn't responding to the nand that was installed by Nintendo but we don't know exactly what the gateway brick code did. 
-  * I already said that I don't know how but you smart ass people think you know but honestly you don't know shit about it either. no one said you had to answer to my comment so stfu and ignore my post
-  * like we need more pointless 3ds brick threads real mature. must be a bunch of little kids that think they know everything. typical
-  * Quote from http://www.maxconsole.com/maxcon_forums/threads/280010-Update-on-RMAing-my-3DS?p=1671397#post1671397:im on gbatemp and there is a bunch of little kids that think they know everything and every theory. its like when a child tells a parent I know I know I know gets annoying
-  */
+  **/
 #include <string.h>
 #include <avr/io.h>
 #include <sd_raw_roland.h>
@@ -30,7 +23,14 @@
  *
  * \author Roland Riegel
  */
-
+ 
+/**
+ * \file
+ * SPI unlock/lock/force erase implementation (license: GPLv2 or LGPLv2.1)
+ *
+ * \author Krisztian, Ryuga with some help from bkifft
+ */
+ 
 /**
  * \addtogroup sd_raw_config MMC/SD configuration
  * Preprocessor defines to configure the MMC/SD support.
@@ -180,6 +180,7 @@ static void 					unlock_XOR();
 static void 					dedication();
 static inline 					uint32_t byte_swap(uint32_t in);
 void 							PrintHex8(uint8_t *data, uint8_t length);
+static void 					dedication();
 /* Variable declarations */
 static uint8_t sd_raw_card_type; // card type state
 uint8_t cardstatus[2]; // card status array to store a R2 response
@@ -201,7 +202,7 @@ void sd_raw_configure(){
     configure_pin_sck();
     configure_pin_ss();
     configure_pin_miso();
-    Serial.print("Enabled outputs/inputs");
+    Serial.print(F("Enabled outputs/inputs"));
     unselect_card();
 
     /* initialize SPI with lowest frequency; max. 400kHz during identification mode of card */
@@ -233,7 +234,7 @@ uint8_t sd_raw_init()
 
     if(!sd_raw_available())
         return 0;
-    Serial.print("\nWaiting the minimum 80 cycles for warm up");
+    Serial.print(F("\nWaiting the minimum 80 cycles for warm up"));
     /* card needs 74 cycles minimum to start up */
     for(uint8_t i = 0; i < 12; ++i)
     {
@@ -242,7 +243,7 @@ uint8_t sd_raw_init()
     }
     /* address card */
     select_card();
-    Serial.print("\nKeeping CS line on low for communication");
+    Serial.print(F("\nKeeping CS line on low for communication"));
     /* reset card */
     uint8_t response;
     for(uint16_t i = 0; ; ++i)
@@ -254,12 +255,12 @@ uint8_t sd_raw_init()
         if(i == 0x1ff)
         {
             unselect_card();
-            Serial.print("\nReset command sent on MOSI, but no answer from the slave. Please check your card connection/soldering");
+            Serial.print(F("\nReset command sent on MOSI, but no answer from the slave. Please check your card connection/soldering"));
             return 0;
 
         }
     }
-    Serial.print("\nCard is in IDLE. Checking if the voltage is correct.");
+    Serial.print(F("\nCard is in IDLE. Checking if the voltage is correct."));
 #if SD_RAW_SDHC
     /* check for version of SD card specification */
     response = sd_raw_send_command(CMD_SEND_IF_COND, 0x100 /* 2.7V - 3.6V */ | 0xaa /* test pattern */);
@@ -274,7 +275,7 @@ uint8_t sd_raw_init()
 
         /* card conforms to SD 2 card specification */
         sd_raw_card_type |= (1 << SD_RAW_SPEC_2);
-        Serial.print("\nThis is an SDHC (SD2) card");
+        Serial.print(F("\nThis is an SDHC (SD2) card"));
     }
     else
 #endif
@@ -286,12 +287,12 @@ uint8_t sd_raw_init()
         {
             /* card conforms to SD 1 card specification */
             sd_raw_card_type |= (1 << SD_RAW_SPEC_1);
-            Serial.print("\nThis is an SD (SD1) card");
+            Serial.print(F("\nThis is an SD (SD1) card"));
         }
         else
         {
             /* MMC card */
-            Serial.print("\nMMC card");
+            Serial.print(F("\nMMC card"));
         }
     }
 
@@ -319,7 +320,7 @@ uint8_t sd_raw_init()
         if(i == 0x7fff)
         {
             unselect_card();
-            Serial.print("\nCard is not ready for some reasons, stopping communication with the slave");
+            Serial.print(F("\nCard is not ready for some reasons, stopping communication with the slave"));
             return 0;
         }
     }
@@ -345,11 +346,11 @@ uint8_t sd_raw_init()
     /* set block size to 512 bytes */
     if(sd_raw_send_command(CMD_SET_BLOCKLEN, 512))
     {
-        Serial.print("\nCan't set BLOCKLEN to 512 bytes");
+        Serial.print(F("\nCan't set BLOCKLEN to 512 bytes"));
         unselect_card();
         return 0;
     }else{
-		Serial.print("\nSet SET_BLOCKLEN to 512 byte");
+		Serial.print(F("\nSet SET_BLOCKLEN to 512 byte"));
 	}
     ShowCardStatus();
     /* deaddress card */
@@ -362,13 +363,13 @@ uint8_t sd_raw_init()
 	}else{
 		if(eraser == 0){
 			Serial.println(erase(), BIN);
-			Serial.print("\nAutomatically erased the card");
+			Serial.print(F("\nAutomatically erased the card"));
 		}else if(eraser == 1){
 			Serial.println(pwd_lock(), BIN);
-			Serial.print("\nAutomatically locked the card");
+			Serial.print(F("\nAutomatically locked the card"));
 		}else if(eraser == 2){
 			Serial.println(pwd_unlock(), BIN);
-			Serial.print("\nAutomatically unlocked the card");
+			Serial.print(F("\nAutomatically unlocked the card"));
 		}
 	}
     ShowCardStatus();
@@ -1195,18 +1196,18 @@ static uint8_t erase()
     uint8_t command = 0x2a;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     sd_raw_rec_byte();
-    Serial.println("\nStarting erase procedure");
+    Serial.println(F("\nStarting erase procedure"));
     select_card(); // select SD card first
     sd_raw_send_command(CMD_CRC_ON_OFF, 0);
     if(sd_raw_send_command(CMD_SET_BLOCKLEN, 1))
     {
-        Serial.print("\nIMPOSIBLE TO SET_BLOCKLEN to 1 byte\n");
+        Serial.print(F("\nIMPOSIBLE TO SET_BLOCKLEN to 1 byte\n"));
         unselect_card();
         return 0;
     }
     else
     {
-        Serial.print("\nSET_BLOCKLEN to 1 byte\n");
+        Serial.print(F("\nSET_BLOCKLEN to 1 byte\n"));
     }
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
     Serial.println(r);
@@ -1234,7 +1235,7 @@ static uint8_t pwd_lock()
     uint8_t command = 0x2a;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     sd_raw_rec_byte();
-    Serial.print("\nStarting locking procedure");
+    Serial.print(F("\nStarting locking procedure"));
     select_card(); // select SD card first
     /*r=sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
     r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
@@ -1253,7 +1254,7 @@ static uint8_t pwd_lock()
     xchg((crc >> 8) & 0xff);
     xchg((crc >> 0) & 0xff);
     r =  sd_wait_for_data();
-	Serial.print("\nDone");
+	Serial.print(F("\nDone"));
 	return r;
 }
 	
@@ -1272,7 +1273,7 @@ static uint8_t pwd_unlock()
     uint8_t command = 0x2a;
     uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     sd_raw_rec_byte();
-    Serial.print("\nStarting unlocking procedure");
+    Serial.print(F("\nStarting unlocking procedure"));
     select_card(); // select SD card first
     /*r=sd_raw_send_command(CMD_CRC_ON_OFF, 0);*/
     r=sd_raw_send_command(CMD_SET_BLOCKLEN, pwd_len+2);
@@ -1291,10 +1292,16 @@ static uint8_t pwd_unlock()
     xchg((crc >> 8) & 0xff);
     xchg((crc >> 0) & 0xff);
     r =  sd_wait_for_data();
-	Serial.print("\nDone");
+	Serial.print(F("\nDone"));
 	return r;
 }
 
+/**
+ * \ingroup sd_raw
+ * Print the hex with leading zeros
+ *
+ * \returns N/A
+ */
 void PrintHex8(uint8_t *data, uint8_t length) // prints 8-bit data in hex with leading zeroes
 {
         Serial.print("0x"); 
@@ -1305,6 +1312,12 @@ void PrintHex8(uint8_t *data, uint8_t length) // prints 8-bit data in hex with l
         }
 }
 
+/**
+ * \ingroup sd_raw
+ * Code stolen from bkifft, used to swap the bytes in some cases
+ *
+ * \returns N/A
+ */
 static inline uint32_t byte_swap (uint32_t in)
 {
   uint32_t b0 = in & 0xff;
@@ -1315,6 +1328,12 @@ static inline uint32_t byte_swap (uint32_t in)
   return ret;
 }
 
+/**
+ * \ingroup sd_raw
+ * Very experimental unlock function based on CID and XORpad
+ *
+ * \returns N/A
+ */
 static void unlock_XOR(){
 	// Thanks a lot bkifft for this code, and for helping me fix random and weird bugs in my code
 	// Variables
@@ -1350,13 +1369,13 @@ static void unlock_XOR(){
 	uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     Serial.print("\nCID from 3ds stored in uint8_t array: ");
     PrintHex8((uint8_t*)(cid3ds), 16);
-	Serial.print("\nDEBUG: key byteswap\n");
+	Serial.print(F("\nDEBUG: key byteswap\n"));
     //Swap the bites in the XORpad because of the biteorder
     if(swap) for (int i = 0; i<=3; ++i) key[i] = byte_swap(key[i]);
-    Serial.print("\nDEBUG: Swapped key: 0x");
+    Serial.print(F("\nDEBUG: Swapped key: 0x"));
     for (int i=0; i<3; ++i)  Serial.print(key[i], HEX);
     //print the swapped key and the CID to test if nothing went wrong with it
-    Serial.print("\nDEBUG: CID before XOR and command injection: ");
+    Serial.print(F("\nDEBUG: CID before XOR and command injection: "));
 	PrintHex8((uint8_t*)(cid3ds), 16);
     //XOR 32bit of the CID with the XORpad
     ((uint32_t*) cid3ds)[0] ^= key[0];
@@ -1367,10 +1386,10 @@ static void unlock_XOR(){
     //((uint8_t*) cid3ds)[0] = 0b00000010; //clear password
 	((uint8_t*) cid3ds)[0] = arg;
     ((uint8_t*) cid3ds)[1] = 14; //14 byte password
-    Serial.print("\nDEBUG: unlock payload: ");
+    Serial.print(F("\nDEBUG: unlock payload: "));
     //for (int i = 0; i <16; ++i) Serial.print(((uint8_t*)(cid3ds))[i], HEX);
 	PrintHex8((uint8_t*)(cid3ds), 16);
-	Serial.print("\nExchanging the payload and data");
+	Serial.print(F("\nExchanging the payload and data"));
 	r=sd_raw_send_command(CMD_SET_BLOCKLEN, 16);
     r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
 	sd_wait_for_data();
@@ -1383,21 +1402,53 @@ static void unlock_XOR(){
     //TODO: add function which send all this to the eMMC, first 2 bytes being the CMD and the argument followed by the payload, which is all combined in the cid3ds variable
 }
 
+/**
+ * \ingroup sd_raw
+ * Prints the dedication over the serial line
+ *
+ * \returns N/A
+ */
 static void dedication(){
+	Serial.print(F("\n--------------------------------------------------------"));
 	Serial.print(F("\nThis piece of code is dedicated to my favorite user from gbatemp, crazyace2011."));
 	Serial.print(F("\nIf you wonder why, just read the following quotes by him: "));
 	Serial.print(F("\nQuotes from http://gbatemp.net/threads/has-anyone-with-a-brick-been-able-to-recover.360647/:\n\"im trying to understand something everyone is spitting out information that they truly don't know."));
-	Serial.print(F("the emmc is wiped or locked the nand is wiped out. no one has the hardware to know 100% but everyone is talking like they know if you knew you would have a way of fixing not just talking about whats wrong."));
-	Serial.print(F("people are just claiming to know what is wrong when they don't have the equipment back up the theory.\"\n"));
+	Serial.print(F("\nthe emmc is wiped or locked the nand is wiped out. no one has the hardware to know 100% but everyone is talking like they know if you knew you would have a way of fixing not just talking about whats wrong."));
+	Serial.print(F("\npeople are just claiming to know what is wrong when they don't have the equipment back up the theory.\""));
 	Serial.print(F("\n\"im not saying you per say im just saying that everyone is talking like they are Einstein and know what is going on. who's to say that something is blocking the emmc controller not the emmc controller "));
-	Serial.print(F("itself I don't know what it could be but im not throwing out stuff. im not ranting that you are doing it. its just people say something tech about the insides of a 3ds but the thing is no one know whats "));
-	Serial.print(F("going on inside the 3ds and what the brick code actually did to the unit. yes we know that the system isn't responding to the nand that was installed by Nintendo but we don't know exactly what the gateway brick code did.\""));
+	Serial.print(F("\nitself I don't know what it could be but im not throwing out stuff. im not ranting that you are doing it. its just people say something tech about the insides of a 3ds but the thing is no one know whats "));
+	Serial.print(F("\ngoing on inside the 3ds and what the brick code actually did to the unit. yes we know that the system isn't responding to the nand that was installed by Nintendo but we don't know exactly what the gateway brick code did.\""));
 	Serial.print(F("\n\"I already said that I don't know how but you smart ass people think you know but honestly you don't know shit about it either. no one said you had to answer to my comment so stfu and ignore my post\""));
 	Serial.print(F("\n\"like we need more pointless 3ds brick threads real mature. must be a bunch of little kids that think they know everything. typical\""));
-	Serial.print(F("\nQuote from http://www.maxconsole.com/maxcon_forums/threads/280010-Update-on-RMAing-my-3DS?p=1671397#post1671397:\n\"im on gbatemp and there is a bunch of little kids that think they know everything and every theory. "));
-	Serial.print(F("its like when a child tells a parent I know I know I know gets annoying\"\n"));
+	Serial.print(F("\n\nQuote from http://www.maxconsole.com/maxcon_forums/threads/280010-Update-on-RMAing-my-3DS?p=1671397#post1671397:\n\"im on gbatemp and there is a bunch of little kids that think they know everything and every theory. "));
+	Serial.print(F("\nits like when a child tells a parent I know I know I know gets annoying\"\n"));
 	Serial.print(F("\nAnyway, true shoutout to my man inian who played my brick guinea pig and all the fellas who gave constructive feedback on the \"Has anyone with a brick been able to recover\" thread, you know who you are."));
 	Serial.print(F("\nBig thanks to the anonymous donor for the Vernam cipher key / XOR pad"));
+	menu();
+}
+
+/**
+ * \ingroup sd_raw
+ * Prints the credits over the serial line
+ *
+ * \returns N/A
+ */
+static void credits(){
+	Serial.print(F("\n--------------------------------------------------------"));
+	Serial.print(F("\nCopyright (c) by Roland Riegel, Ryuga, Krisztian and bkifft"));
+	Serial.print(F("\nA statement from our sponsor (who gave me the Unlock key):"));
+	Serial.print(F("\n\"If you are reading this your 3DS has most likely been bricked by a Virus called Gateway 3DS."));
+	Serial.print(F("\nIf so return it and get a refund immediately."));
+	Serial.print(F("\nBecause what they have done is they made a soft-mod for the 3DS but then decided"));
+	Serial.print(F("\nthat they would earn more money if they added their own AP."));
+	Serial.print(F("\nThey also added a lot of obfuscation (to prevent pirates from pirating their card and software),")); 
+	Serial.print(F("\nwhich most likely also is the reason why some versions are not stable (and the brick code is triggered)."));
+	Serial.print(F("\nAnd as you already see on your 3DS they added brick code in the 2.0_2b Version."));
+	Serial.print(F("\nThis brick code is not even written correctly (else this unbricker wouldn't work)."));
+	Serial.print(F("\nSo they even failed at programming brick code."));
+	Serial.print(F("\nTo sum it all up you bought a badly programmed Virus."));
+	Serial.print(F("\nBuy your games, don't pirate them. You see what happens when you pirate."));
+	Serial.print(F("\nI hope you learned from your mistake.\""));
 	menu();
 }
 
@@ -1410,19 +1461,20 @@ static void dedication(){
 static void menu(){
 		uint8_t						r;
 		r = 0;
-		Serial.print("\n----SD LOCKER MENU----");
-		Serial.print("\nProgrammed by Krisztian and Ryuga");
-		Serial.print("\nThanks Coto for your awesome CRC16 algorithm");
-		Serial.print("\nThis program is dedicated to crazyace2011 @GBAtemp");
-		Serial.print("\n----------------------");
-		Serial.print("\ni - REINITIALIZE");
-		Serial.print("\nu - UNLOCK");
-		Serial.print("\nl - LOCK");
-		Serial.print("\ne - ERASE");
-		Serial.print("\na - XOR");
-		Serial.print("\nd - DEDICATION");
-		Serial.print("\nx - TERMINATE EXECUTION");
-		Serial.print("\n----------------------");
+		Serial.print(F("\n----SD LOCKER MENU----"));
+		Serial.print(F("\nProgrammed by Krisztian and Ryuga"));
+		Serial.print(F("\nThanks Coto for your awesome CRC16 algorithm"));
+		Serial.print(F("\nThis program is dedicated to crazyace2011 @GBAtemp"));
+		Serial.print(F("\n----------------------"));
+		Serial.print(F("\ni - REINITIALIZE"));
+		Serial.print(F("\nu - UNLOCK"));
+		Serial.print(F("\nl - LOCK"));
+		Serial.print(F("\ne - ERASE"));
+		Serial.print(F("\nv - VERNAM CYPHER UNLOCK"));
+		Serial.print(F("\nd - DEDICATION"));
+		Serial.print(F("\nc - CREDITS"));
+		Serial.print(F("\nx - TERMINATE EXECUTION"));
+		Serial.print(F("\n----------------------"));
 		while(!Serial.available()) ;
 		r = Serial.read();
 		if      (r == 'u' || r == 'U')  pwd_unlock();
@@ -1430,8 +1482,9 @@ static void menu(){
 		else if (r == 'e' || r == 'E')  erase();
 		else if (r == 'x' || r == 'X')  terminateExecution = 1;
 		else if (r == 'i' || r == 'I')  sd_raw_init();
-		else if (r == 'a' || r == 'A')  unlock_XOR();
+		else if (r == 'v' || r == 'V')  unlock_XOR();
 		else if (r == 'd' || r == 'D')  dedication();
+		else if (r == 'c' || r == 'C')  credits();
 		else  Serial.print("\nERROR: Wrong input.");
 		if(!terminateExecution) {
 			/*menu();*/
