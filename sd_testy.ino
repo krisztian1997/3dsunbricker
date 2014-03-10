@@ -29,10 +29,10 @@ int print_info()
     Serial.print("Copied: ");
     Serial.print(sdinfo.flag_copy,DEC);
     Serial.println();
-    Serial.print("Write protected: ");
+    Serial.print("Temporary write protected: ");
     Serial.print(sdinfo.flag_write_protect_temp,DEC);
     Serial.println();
-    Serial.print("Temporal write protected: ");
+    Serial.print("Permanent write protected: ");
     Serial.print(sdinfo.flag_write_protect,DEC);
     Serial.println();
     Serial.print("Format: ");

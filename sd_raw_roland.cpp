@@ -177,15 +177,25 @@ static uint8_t 					sd_raw_send_reset();
 static void 					menu();
 static int8_t  					ReadCID(void);
 static void 					unlock_XOR();
+static void						lock_XOR();
 static void 					dedication();
 static inline 					uint32_t byte_swap(uint32_t in);
 void 							PrintHex8(uint8_t *data, uint8_t length);
 static void 					dedication();
+static void                                     GenerateCRCTable();
+static uint8_t                                  AddByteToCRC(uint8_t  crc, uint8_t  b);
+static uint8_t                                  ReadCSD();
+static uint8_t                                  SetTmpWriteProc();
+static uint8_t                                  ResetTmpWriteProc();
+
+#define  CRC7_POLY              0x89
 /* Variable declarations */
 static uint8_t sd_raw_card_type; // card type state
 uint8_t cardstatus[2]; // card status array to store a R2 response
 uint8_t pwd[17]; 
 uint8_t pwd_len;
+uint8_t crctable[256];
+uint8_t csd[16];
 char GlobalPWDStr[16] = {'T', 'W', 'I', 'L', 'I', 'G', 'S', 'P', 'O', 'R', 'K', 'L', 'E', 'P', 'A', 'H'}; // password used to lock the card
 unsigned char mess[12] ={0x15, 0x47, 0xC3, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF}; // dont touch this array, its used by the CRC16
 uint8_t terminateExecution = 0;
@@ -1366,6 +1376,7 @@ static void unlock_XOR(){
 		cid3ds[i] = xchg(0xff);
 	}
 	xchg(0xff);							// send the crc
+	sd_wait_for_data();
 	uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
     Serial.print("\nCID from 3ds stored in uint8_t array: ");
     PrintHex8((uint8_t*)(cid3ds), 16);
@@ -1373,7 +1384,7 @@ static void unlock_XOR(){
     //Swap the bites in the XORpad because of the biteorder
     if(swap) for (int i = 0; i<=3; ++i) key[i] = byte_swap(key[i]);
     Serial.print(F("\nDEBUG: Swapped key: 0x"));
-    for (int i=0; i<3; ++i)  Serial.print(key[i], HEX);
+    for (int i=0; i<=3; ++i)  Serial.print(key[i], HEX);
     //print the swapped key and the CID to test if nothing went wrong with it
     Serial.print(F("\nDEBUG: CID before XOR and command injection: "));
 	PrintHex8((uint8_t*)(cid3ds), 16);
@@ -1402,6 +1413,221 @@ static void unlock_XOR(){
     //TODO: add function which send all this to the eMMC, first 2 bytes being the CMD and the argument followed by the payload, which is all combined in the cid3ds variable
 }
 
+static void lock_XOR(){
+	// Thanks a lot bkifft for this code, and for helping me fix random and weird bugs in my code
+	// Variables
+	uint32_t 		key[4];
+    uint32_t 		temp;
+    uint8_t 		cid3ds[16];
+	int8_t			response;
+	uint8_t			r;
+	bool			swap;
+	uint8_t arg = 0x01;
+    uint8_t command = 0x2a;
+	//the Vernam cipher key: 17C6987E4401EDDE371AC56865FFB562. thanks to the anonymous donator!
+    Serial.print("\nTrying to unlock the nand with the generated password");
+	//XORpad: 17C6987E4401EDDE371AC56865FFB562 split into 4x4bytes
+    key[0] = 0x17C6987E;
+    key[1] = 0x4401EDDE;
+    key[2] = 0x371AC568;
+    key[3] = 0x65FFB562;
+	
+	//Get the CID from the SDcard/eMMC
+	for (int i=0; i<16; i++)  cid3ds[i] = 0;
+	response = sd_raw_send_command(CMD_SEND_CID, 0);
+	response = sd_wait_for_data();
+	if (response != (int8_t)0xfe)
+	{
+		//Serial.print("\nERROR: FAILED READING CID");
+	}
+	for (int i=0; i<16; i++)
+	{
+		cid3ds[i] = xchg(0xff);
+	}
+	xchg(0xff);							// send the crc
+	sd_wait_for_data();
+	uint16_t crc = calc_crc(mess,((command&arg)|command),CRC16STARTBIT);
+    Serial.print("\nCID from 3ds stored in uint8_t array: ");
+    PrintHex8((uint8_t*)(cid3ds), 16);
+	Serial.print(F("\nDEBUG: key byteswap\n"));
+    //Swap the bites in the XORpad because of the biteorder
+    if(swap) for (int i = 0; i<=3; ++i) key[i] = byte_swap(key[i]);
+    Serial.print(F("\nDEBUG: Swapped key: 0x"));
+    for (int i=0; i<=3; ++i)  Serial.print(key[i], HEX);
+    //print the swapped key and the CID to test if nothing went wrong with it
+    Serial.print(F("\nDEBUG: CID before XOR and command injection: "));
+	PrintHex8((uint8_t*)(cid3ds), 16);
+    //XOR 32bit of the CID with the XORpad
+    ((uint32_t*) cid3ds)[0] ^= key[0];
+    ((uint32_t*) cid3ds)[1] ^= key[1];
+    ((uint32_t*) cid3ds)[2] ^= key[2];
+    ((uint32_t*) cid3ds)[3] ^= key[3];
+    //construct the payload
+    //((uint8_t*) cid3ds)[0] = 0b00000010; //clear password
+	((uint8_t*) cid3ds)[0] = arg;
+    ((uint8_t*) cid3ds)[1] = 14; //14 byte password
+    Serial.print(F("\nDEBUG: unlock payload: "));
+    //for (int i = 0; i <16; ++i) Serial.print(((uint8_t*)(cid3ds))[i], HEX);
+	PrintHex8((uint8_t*)(cid3ds), 16);
+	Serial.print(F("\nExchanging the payload and data"));
+	r=sd_raw_send_command(CMD_SET_BLOCKLEN, 16);
+    r=sd_raw_send_command(CMD_LOCK_UNLOCK,0);
+	sd_wait_for_data();
+	xchg(0xfe);
+	for (int i = 0; i <16; ++i) xchg(((uint8_t*)(cid3ds))[i] & 0xff);
+	xchg((crc >> 8) & 0xff);
+    xchg((crc >> 0) & 0xff);
+	Serial.print("\nResponse: ");
+	Serial.print(r);
+    //TODO: add function which send all this to the eMMC, first 2 bytes being the CMD and the argument followed by the payload, which is all combined in the cid3ds variable
+}
+
+//Temp Write protect
+static uint8_t  SetTmpWriteProc()
+{
+        uint8_t                         response;
+        uint8_t                         tcrc;
+        uint16_t                        i;
+        Serial.print(F("\nSetting Temp Write Protect Bit"));
+        GenerateCRCTable();
+        ReadCSD();
+        select_card();
+		sd_wait_for_data();
+        csd[14] = csd[14] | 0x10;
+        response = sd_raw_send_command(CMD_PROGRAM_CSD, 0);
+		sd_wait_for_data();
+        Serial.print(F("\nCMD_PROGRAM_CSD Response: "));
+        Serial.print(response,HEX);
+        if (response != 0)
+        {
+                Serial.print(F("\nRead/Write Failed"));
+                //unselect_card();
+        }
+        else
+        {
+        sd_wait_for_data();
+        xchg(0xfe);                                                     // send data token marking start of data block
+ 
+        tcrc = 0;
+        for (i=0; i<15; i++)                            // for all 15 data bytes in CSD...
+        {
+        xchg(csd[i]);                                   // send each byte via SPI
+                tcrc = AddByteToCRC(tcrc, csd[i]);              // add byte to CRC
+        }
+        xchg((tcrc<<1) + 1);                            // format the CRC7 value and send it
+ 
+        xchg(0xff);                                                     // ignore dummy checksum
+        xchg(0xff);                                                     // ignore dummy checksum
+ 
+        i = 0xffff;                                                     // max timeout
+        while (!xchg(0xFF) && (--i))  ;         // wait until we are not busy
+ 
+        if (i)  Serial.print(F("\nSet Temp Write Proctect Done"));                 // return success
+        else  Serial.println(F("\nSet Temp Write Proctect Failed"));         // nope, didn't work
+        }
+}
+ 
+static uint8_t  ResetTmpWriteProc()
+{
+        uint8_t                         response;
+        uint8_t                         tcrc;
+        uint16_t                        i;
+        Serial.print(F("\nResetting Temp Write Protect Bit"));
+        GenerateCRCTable();
+        ReadCSD();
+        select_card();
+		sd_wait_for_data();
+        csd[14] = csd[14] & ~0x10;
+        response = sd_raw_send_command(CMD_PROGRAM_CSD, 0);
+        Serial.print(F("\nCMD_PROGRAM_CSD Response: "));
+        Serial.print(response,HEX);
+        if (response != 0)
+        {
+                Serial.print(F("\nRead/Write Failed"));
+                //unselect_card();
+        }
+        else
+        {
+        sd_wait_for_data();
+        xchg(0xfe);                                                     // send data token marking start of data block
+ 
+        tcrc = 0;
+        for (i=0; i<15; i++)                            // for all 15 data bytes in CSD...
+        {
+        xchg(csd[i]);                                   // send each byte via SPI
+                tcrc = AddByteToCRC(tcrc, csd[i]);              // add byte to CRC
+        }
+        xchg((tcrc<<1) + 1);                            // format the CRC7 value and send it
+ 
+        xchg(0xff);                                                     // ignore dummy checksum
+        xchg(0xff);                                                     // ignore dummy checksum
+ 
+        i = 0xffff;                                                     // max timeout
+        while (!xchg(0xFF) && (--i))  ;         // wait until we are not busy
+ 
+        if (i)  Serial.print(F("\nReset Temp Write Proctect Done"));                       // return success
+        else  Serial.print(F("\nReset Temp Write Proctect Failed"));               // nope, didn't work
+        }
+}
+ 
+ 
+static uint8_t  AddByteToCRC(uint8_t  crc, uint8_t  b)
+{
+        return crctable[(crc << 1) ^ b];
+}
+ 
+static void GenerateCRCTable()
+{
+    int i, j;
+ 
+    // generate a table value for all 256 possible byte values
+    for (i = 0; i < 256; i++)
+    {
+        crctable[i] = (i & 0x80) ? i ^ CRC7_POLY : i;
+        for (j = 1; j < 8; j++)
+        {
+            crctable[i] <<= 1;
+            if (crctable[i] & 0x80)
+                crctable[i] ^= CRC7_POLY;
+        }
+    }
+}
+ 
+static  uint8_t  ReadCSD()
+{
+        uint8_t                 i;
+        int8_t                  response;
+        Serial.print(F("\nReading CSD"));
+        for (i=0; i<16; i++)  csd[i] = 0;
+        select_card();
+        //response = sd_raw_send_command(CMD_SEND_CSD, 0);
+        if (sd_raw_send_command(CMD_SEND_CSD, 0))
+        {
+                unselect_card();
+                Serial.print(F("\nUnselect card "));
+        }
+        response = sd_wait_for_data();
+        if (response != (int8_t)0xfe)
+        {
+                Serial.print(F("\nReadCSD(), sd_wait_for_data returns: 0x"));
+                Serial.print(response,HEX);
+                Serial.print(F("\nReading CSD failed"));
+        }
+        else
+        {
+        for (i=0; i<16; i++)
+        {
+                csd[i] = xchg(0xff);
+                //Serial.print(csd[i]);
+        }
+ 
+        xchg(0xff);     // burn the CRC
+        Serial.print(F("\n14th byte of CSD: "));
+        Serial.print(csd[14],BIN);
+        Serial.print(F("\nDone"));
+        }
+}
+
 /**
  * \ingroup sd_raw
  * Prints the dedication over the serial line
@@ -1426,7 +1652,6 @@ static void dedication(){
 	Serial.print(F("\nBig thanks to the anonymous donor for the Vernam cipher key / XOR pad"));
 	menu();
 }
-
 /**
  * \ingroup sd_raw
  * Prints the credits over the serial line
@@ -1460,7 +1685,9 @@ static void credits(){
  */
 static void menu(){
 		uint8_t						r;
+		uint8_t						confirm;
 		r = 0;
+		confirm = 0;
 		Serial.print(F("\n----SD LOCKER MENU----"));
 		Serial.print(F("\nProgrammed by Krisztian and Ryuga"));
 		Serial.print(F("\nThanks Coto for your awesome CRC16 algorithm"));
@@ -1470,7 +1697,10 @@ static void menu(){
 		Serial.print(F("\nu - UNLOCK"));
 		Serial.print(F("\nl - LOCK"));
 		Serial.print(F("\ne - ERASE"));
+		Serial.print(F("\ns - Set Temp Write Protect"));
+		Serial.print(F("\nr - Reset Temp Write Protect"));
 		Serial.print(F("\nv - VERNAM CYPHER UNLOCK"));
+		Serial.print(F("\no - VERNAM CYPHER LOCK"));
 		Serial.print(F("\nd - DEDICATION"));
 		Serial.print(F("\nc - CREDITS"));
 		Serial.print(F("\nx - TERMINATE EXECUTION"));
@@ -1479,10 +1709,21 @@ static void menu(){
 		r = Serial.read();
 		if      (r == 'u' || r == 'U')  pwd_unlock();
 		else if (r == 'l' || r == 'L')  pwd_lock();
-		else if (r == 'e' || r == 'E')  erase();
+		else if (r == 'e' || r == 'E')  
+			{
+				Serial.print(F("\nWarning! This will erase all the contents! Enter 'y' to continue, or enter other key to terminate"));
+				while(!Serial.available()) ;
+				confirm = Serial.read();
+				if (confirm == 'y' || confirm == 'Y')
+				{erase();}
+				else
+				{terminateExecution = 1;}}
+		else if (r == 's' || r == 'S')  SetTmpWriteProc();
+		else if (r == 'r' || r == 'R')	ResetTmpWriteProc();
 		else if (r == 'x' || r == 'X')  terminateExecution = 1;
 		else if (r == 'i' || r == 'I')  sd_raw_init();
 		else if (r == 'v' || r == 'V')  unlock_XOR();
+		else if (r == 'o' || r == 'O')  lock_XOR();
 		else if (r == 'd' || r == 'D')  dedication();
 		else if (r == 'c' || r == 'C')  credits();
 		else  Serial.print("\nERROR: Wrong input.");
