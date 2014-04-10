@@ -102,6 +102,14 @@ extern "C"
 
     #define select_card() PORTB &= ~(1 << PORTB0)
     #define unselect_card() PORTB |= (1 << PORTB0)
+#elif defined(__AVR_AT90USB1286__)
+    #define configure_pin_mosi() DDRB |= (1 << DDB2)
+    #define configure_pin_sck() DDRB |= (1 << DDB1)
+    #define configure_pin_ss() DDRB |= (1 << DDB0)
+    #define configure_pin_miso() DDRB &= ~(1 << DDB3)
+
+    #define select_card() PORTB &= ~(1 << PORTB0)
+    #define unselect_card() PORTB |= (1 << PORTB0)
 #else
     #error "no sd/mmc pin mapping available!"
 #endif
