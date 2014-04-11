@@ -63,6 +63,9 @@ In case if you still dont understand, please take a look at those schematics:
 <li> Flash your NAND backup back and have fun.</li>
 </ol>
 
+Added Teensy 2.0 support (thanks littlebalup), this is the wiring diagram:
+To be used with Teensyduino add-on (http://www.pjrc.com/teensy/td_download.html).
+Wiring for Teensy++2.0 : https://googledrive.com/host/0B-MCtIPj5DWRQ1kxTC10T0Nza0k/3dsunbricker_for_Teensy++2.0_wiring.png
 
 	
 	
